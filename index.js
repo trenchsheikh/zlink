@@ -8,7 +8,8 @@ import WebServer from './webServer.js';
 class ZlinkApp {
   constructor() {
     this.bot = null;
-    this.evmMonitor = null;
+    this.baseMonitor = null;
+    this.bnbMonitor = null;
     this.solanaMonitor = null;
     this.webServer = null;
   }
@@ -25,11 +26,13 @@ class ZlinkApp {
       this.bot.start();
 
       // Initialize transaction monitors
-      this.evmMonitor = new EVMMonitor(this.handleTransaction.bind(this));
+      this.baseMonitor = new EVMMonitor(config.base, this.handleTransaction.bind(this));
+      this.bnbMonitor = new EVMMonitor(config.bnb, this.handleTransaction.bind(this));
       this.solanaMonitor = new SolanaMonitor(this.handleTransaction.bind(this));
 
       // Start monitors
-      await this.evmMonitor.start();
+      await this.baseMonitor.start();
+      await this.bnbMonitor.start();
       await this.solanaMonitor.start();
 
       // Start web server
@@ -39,14 +42,16 @@ class ZlinkApp {
       console.log('\n✅ All services started successfully!');
       console.log('\n📊 Status:');
       console.log(`   - Telegram Bot: ✅ Running`);
-      console.log(`   - EVM Monitor: ${this.evmMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
+      console.log(`   - Base Monitor: ${this.baseMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
+      console.log(`   - BNB Monitor: ${this.bnbMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
       console.log(`   - Solana Monitor: ${this.solanaMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
       console.log(`   - Web Server: ✅ Running`);
       
-      if (this.evmMonitor.enabled || this.solanaMonitor.enabled) {
+      const anyEnabled = this.baseMonitor.enabled || this.bnbMonitor.enabled || this.solanaMonitor.enabled;
+      if (anyEnabled) {
         console.log('\n💡 Bot is now monitoring transactions...\n');
       } else {
-        console.log('\n⚠️  No blockchain monitors are active. Configure EVM_RPC_URL/EVM_WALLET_ADDRESS or SOLANA_RPC_URL/SOL_WALLET_ADDRESS in .env\n');
+        console.log('\n⚠️  No blockchain monitors are active. Configure wallet addresses in .env\n');
       }
     } catch (error) {
       console.error('❌ Failed to start application:', error);
@@ -100,8 +105,12 @@ class ZlinkApp {
   async stop() {
     console.log('\n🛑 Stopping Zlink Bot...');
 
-    if (this.evmMonitor) {
-      this.evmMonitor.stop();
+    if (this.baseMonitor) {
+      this.baseMonitor.stop();
+    }
+
+    if (this.bnbMonitor) {
+      this.bnbMonitor.stop();
     }
 
     if (this.solanaMonitor) {

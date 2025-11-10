@@ -38,7 +38,12 @@ class ZlinkBot {
       const welcomeMessage = `
 🎉 *Welcome to Zlink!*
 
-The easiest way to get Zcash! Send ETH, BNB, MATIC, or SOL and receive ZEC instantly via magic link.
+The easiest way to get Zcash! Send crypto from Base, BNB Chain, or Solana and receive ZEC instantly via magic link.
+
+*Supported Networks:*
+🔷 Base Network
+🟡 BNB Smart Chain
+🟣 Solana
 
 *How it works:*
 1. Register your wallet address
@@ -225,7 +230,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       if (!isEVM && !isSolana) {
         await this.bot.sendMessage(
           chatId,
-          '❌ Invalid wallet address format.\n\nSupported formats:\n• EVM: 0x... (42 characters)\n• Solana: base58 address (32-44 characters)',
+          '❌ Invalid wallet address format.\n\nSupported formats:\n• Base/BNB: 0x... (42 characters)\n• Solana: base58 address (32-44 characters)',
           { parse_mode: 'Markdown' }
         );
         return;
@@ -235,7 +240,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
         // Save wallet mapping
         db.saveUserWallet(userId, username, walletAddress);
 
-        const chain = isEVM ? 'EVM' : 'Solana';
+        const chain = isEVM ? 'Base/BNB' : 'Solana';
       const keyboard = {
         inline_keyboard: [
           [
@@ -638,7 +643,8 @@ That's it! Super simple. 🎉
   }
 
   async showHowToGet(chatId) {
-    const evmAddress = config.evm.walletAddress || 'Not configured';
+    const baseAddress = config.base.walletAddress || 'Not configured';
+    const bnbAddress = config.bnb.walletAddress || 'Not configured';
     const solAddress = config.solana.walletAddress || 'Not configured';
 
     const message = `
@@ -646,21 +652,24 @@ That's it! Super simple. 🎉
 
 Send crypto to these addresses and receive ZEC instantly!
 
-*Ethereum / BSC / Polygon:*
-\`${evmAddress}\`
+🔷 *Base Network:*
+\`${baseAddress}\`
 
-*Solana:*
+🟡 *BNB Smart Chain:*
+\`${bnbAddress}\`
+
+🟣 *Solana:*
 \`${solAddress}\`
 
 *Exchange Rate:*
-0.01 ZEC per transaction
+💎 0.01 ZEC per transaction
 (Custom amounts coming soon!)
 
-*Important:*
-✅ Register your wallet first with /register
-✅ Set your ZEC address with /setaddress
-✅ Send from your registered wallet
-✅ Receive your magic link instantly!
+*How it works:*
+1️⃣ Register your wallet with /register
+2️⃣ Set your ZEC address with /setaddress
+3️⃣ Send crypto from your registered wallet to the address above
+4️⃣ Receive your magic link instantly!
 
 Need help? Click the help button below.
     `;
@@ -945,11 +954,10 @@ Set one to be able to receive ZEC!
 /setaddress <address> - Set your Zcash address
 /mystats - View your statistics
 
-*Supported Chains:*
-• Ethereum (ETH)
-• Binance Smart Chain (BNB)
-• Polygon (MATIC)
-• Solana (SOL)
+*Supported Networks:*
+🔷 Base Network
+🟡 BNB Smart Chain
+🟣 Solana
 
 *Example:*
 1. Register: \`/register 0xYourAddress\`

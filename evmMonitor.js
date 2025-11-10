@@ -3,7 +3,8 @@ import { config } from './config.js';
 import db from './database.js';
 
 class EVMMonitor {
-  constructor(onTransaction) {
+  constructor(chainConfig, onTransaction) {
+    this.chainName = chainConfig.name || 'EVM';
     this.onTransaction = onTransaction;
     this.lastBlock = null;
     this.enabled = false;
@@ -11,25 +12,25 @@ class EVMMonitor {
     this.watchAddress = null;
 
     // Validate configuration before initializing
-    if (!config.evm.rpcUrl || !config.evm.walletAddress) {
-      console.log('⚠️  EVM monitoring disabled: Missing configuration');
+    if (!chainConfig.rpcUrl || !chainConfig.walletAddress) {
+      console.log(`⚠️  ${this.chainName} monitoring disabled: Missing configuration`);
       return;
     }
 
     // Validate EVM address format
-    if (!this.isValidEVMAddress(config.evm.walletAddress)) {
-      console.log('⚠️  EVM monitoring disabled: Invalid wallet address format');
+    if (!this.isValidEVMAddress(chainConfig.walletAddress)) {
+      console.log(`⚠️  ${this.chainName} monitoring disabled: Invalid wallet address format`);
       console.log(`   Expected: 0x followed by 40 hex characters`);
-      console.log(`   Got: ${config.evm.walletAddress}`);
+      console.log(`   Got: ${chainConfig.walletAddress}`);
       return;
     }
 
     try {
-      this.provider = new ethers.JsonRpcProvider(config.evm.rpcUrl);
-      this.watchAddress = config.evm.walletAddress.toLowerCase();
+      this.provider = new ethers.JsonRpcProvider(chainConfig.rpcUrl);
+      this.watchAddress = chainConfig.walletAddress.toLowerCase();
       this.enabled = true;
     } catch (error) {
-      console.log('⚠️  EVM monitoring disabled: Invalid configuration');
+      console.log(`⚠️  ${this.chainName} monitoring disabled: Invalid configuration`);
       console.log(`   Error: ${error.message}`);
     }
   }
@@ -41,11 +42,11 @@ class EVMMonitor {
 
   async start() {
     if (!this.enabled) {
-      console.log('EVM monitor: Skipped (not configured)');
+      console.log(`${this.chainName} monitor: Skipped (not configured)`);
       return;
     }
 
-    console.log(`Starting EVM monitor for address: ${this.watchAddress}`);
+    console.log(`Starting ${this.chainName} monitor for address: ${this.watchAddress}`);
     
     try {
       // Get current block number
@@ -123,11 +124,11 @@ class EVMMonitor {
     const toAddress = tx.to;
     const amount = ethers.formatEther(tx.value);
 
-    console.log(`\n📥 New EVM transaction detected:`);
+    console.log(`\n📥 New ${this.chainName} transaction detected:`);
     console.log(`   Hash: ${txHash}`);
     console.log(`   From: ${fromAddress}`);
     console.log(`   To: ${toAddress}`);
-    console.log(`   Amount: ${amount} ETH`);
+    console.log(`   Amount: ${amount}`);
 
     // Wait for confirmation (3 blocks)
     try {
@@ -135,13 +136,13 @@ class EVMMonitor {
       
       if (receipt.status === 1) {
         // Save to database
-        db.saveTransaction(txHash, 'EVM', fromAddress, toAddress, amount);
+        db.saveTransaction(txHash, this.chainName, fromAddress, toAddress, amount);
         
         // Trigger callback
         if (this.onTransaction) {
           await this.onTransaction({
             txHash,
-            chain: 'EVM',
+            chain: this.chainName,
             from: fromAddress,
             to: toAddress,
             amount,
@@ -161,7 +162,7 @@ class EVMMonitor {
     if (this.provider) {
       this.provider.removeAllListeners('block');
     }
-    console.log('EVM monitor stopped');
+    console.log(`${this.chainName} monitor stopped`);
   }
 }
 

@@ -1,6 +1,6 @@
 # 🔗 Zlink - Instant Zcash Exchange via Telegram
 
-**The easiest way to get Zcash!** Send ETH, BNB, MATIC, or SOL and receive ZEC instantly via magic links on Telegram.
+**The easiest way to get Zcash!** Send crypto from Base, BNB Chain, or Solana and receive ZEC instantly via magic links on Telegram.
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -13,7 +13,7 @@
 
 Zlink is a Telegram-based crypto exchange service that makes getting Zcash simple:
 
-1. **Send** crypto (ETH/BNB/MATIC/SOL) to our address
+1. **Send** crypto (Base/BNB/SOL) to our address
 2. **Receive** a magic link with ZEC on Telegram
 3. **Claim** your Zcash instantly - shareable links!
 
@@ -29,10 +29,9 @@ No KYC, no complicated exchanges, just instant ZEC delivery.
 - Or use web interface for claiming
 
 ### 🔗 **Multi-Chain Support**
-- Ethereum (ETH)
-- Binance Smart Chain (BNB)  
-- Polygon (MATIC)
-- Solana (SOL)
+- 🔷 Base Network (L2 Ethereum)
+- 🟡 BNB Smart Chain (BSC)
+- 🟣 Solana
 
 ### 💫 **Shareable & Transferable**
 - Gift ZEC to friends
@@ -63,8 +62,8 @@ No KYC, no complicated exchanges, just instant ZEC delivery.
 
 - **Node.js 18+** (for ES modules)
 - **Telegram Bot Token** from [@BotFather](https://t.me/botfather)
-- **EVM RPC URL** (Alchemy/Infura)
-- **Solana RPC URL** (optional)
+- **Wallet Addresses** for Base, BNB, and/or Solana
+- **RPC URLs** (free public RPCs included by default)
 - **Zcash Node** (optional - mock mode available)
 
 ### Installation
@@ -101,11 +100,15 @@ For full functionality, configure:
 # Required
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 
-# EVM (Ethereum/BSC/Polygon)
-EVM_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR-API-KEY
-EVM_WALLET_ADDRESS=0xYourWalletAddress
+# Base Network (free public RPC included)
+BASE_RPC_URL=https://mainnet.base.org
+BASE_WALLET_ADDRESS=0xYourBaseWalletAddress
 
-# Solana
+# BNB Smart Chain (free public RPC included)
+BNB_RPC_URL=https://bsc-dataseed.binance.org
+BNB_WALLET_ADDRESS=0xYourBNBWalletAddress
+
+# Solana (free public RPC included)
 SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 SOL_WALLET_ADDRESS=YourSolanaWalletAddress
 
@@ -134,7 +137,7 @@ Open Telegram → Search for @YourBot → /start
 
 **Step 2: Register Your Wallet**
 ```
-/register 0xYourEthereumAddress
+/register 0xYourBaseOrBNBAddress
 or
 /register YourSolanaAddress
 ```
@@ -151,7 +154,7 @@ Click "💰 Get ZEC" button or use /howtoget
 
 **Step 5: Send Crypto**
 ```
-Send ETH/BNB/SOL to the address shown
+Send crypto from Base, BNB Chain, or Solana to the address shown
 ```
 
 **Step 6: Receive Magic Link**
@@ -233,14 +236,13 @@ Perfect for:
 └──┬──────────┬──────────┬──────────┬─────────┘
    │          │          │          │
 ┌──▼───┐  ┌──▼───┐  ┌───▼────┐  ┌─▼──────┐
-│ EVM  │  │ SOL  │  │ Zcash  │  │  Web   │
-│Monitor│  │Monitor│  │Service │  │ Server │
+│ Base │  │ BNB  │  │ SOL    │  │ Zcash  │
+│Monitor│  │Monitor│  │Monitor │  │Service │
 └──────┘  └──────┘  └────────┘  └────────┘
    │          │          │          │
    │          │          │          │
    ▼          ▼          ▼          ▼
-Ethereum   Solana    Zcash RPC   HTTP:3000
-  RPC        RPC
+Base RPC   BNB RPC   SOL RPC   Zcash RPC
 ```
 
 ---
@@ -266,13 +268,17 @@ Database file: `zlink.db` (auto-created)
 # Telegram
 TELEGRAM_BOT_TOKEN=           # Your bot token (required)
 
-# EVM Networks (Ethereum, BSC, Polygon)
-EVM_RPC_URL=                  # RPC endpoint
-EVM_WALLET_ADDRESS=           # Your receiving address
+# Base Network
+BASE_RPC_URL=                 # RPC endpoint (default: https://mainnet.base.org)
+BASE_WALLET_ADDRESS=          # Your Base receiving address
+
+# BNB Smart Chain
+BNB_RPC_URL=                  # RPC endpoint (default: https://bsc-dataseed.binance.org)
+BNB_WALLET_ADDRESS=           # Your BNB receiving address
 
 # Solana
-SOLANA_RPC_URL=               # RPC endpoint
-SOL_WALLET_ADDRESS=           # Your receiving address
+SOLANA_RPC_URL=               # RPC endpoint (default: https://api.mainnet-beta.solana.com)
+SOL_WALLET_ADDRESS=           # Your Solana receiving address
 
 # Zcash
 ZCASH_RPC_URL=                # Node RPC URL
@@ -288,15 +294,20 @@ ZEC_AMOUNT_PER_TRANSACTION=0.01  # ZEC per transaction
 
 ### Getting RPC Endpoints
 
-**Ethereum/EVM:**
+**Base Network:**
+- Free public RPC: `https://mainnet.base.org` (default)
 - [Alchemy](https://www.alchemy.com/) - Free tier available
-- [Infura](https://infura.io/) - Free tier available
-- [QuickNode](https://www.quicknode.com/) - Paid
+- [QuickNode](https://www.quicknode.com/) - Premium
+
+**BNB Smart Chain:**
+- Free public RPC: `https://bsc-dataseed.binance.org` (default)
+- [Binance](https://docs.bnbchain.org/docs/rpc) - Official RPCs
+- [QuickNode](https://www.quicknode.com/) - Premium
 
 **Solana:**
-- Public: `https://api.mainnet-beta.solana.com`
-- [QuickNode](https://www.quicknode.com/)
-- [Helius](https://www.helius.dev/)
+- Free public RPC: `https://api.mainnet-beta.solana.com` (default)
+- [QuickNode](https://www.quicknode.com/) - Premium
+- [Helius](https://www.helius.dev/) - Premium
 
 **Zcash:**
 - Run your own node: [Zcash Download](https://z.cash/download/)
@@ -307,7 +318,7 @@ ZEC_AMOUNT_PER_TRANSACTION=0.01  # ZEC per transaction
 ## 📦 Supported Address Formats
 
 ### Input (User Sends From):
-- **EVM**: `0x` + 40 hex characters
+- **Base/BNB**: `0x` + 40 hex characters (EVM compatible)
 - **Solana**: Base58, 32-44 characters
 
 ### Output (ZEC Sent To):
@@ -440,7 +451,7 @@ If Zcash node isn't configured, bot runs in mock mode (for testing).
 zlink/
 ├── index.js              # Main application entry
 ├── bot.js                # Telegram bot handlers
-├── evmMonitor.js         # Ethereum/BSC/Polygon monitoring
+├── evmMonitor.js         # Base/BNB monitoring (EVM compatible)
 ├── solanaMonitor.js      # Solana monitoring
 ├── zcashService.js       # Zcash sending
 ├── magicLink.js          # Magic link logic
@@ -564,8 +575,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - [Zcash](https://z.cash/) for the privacy-focused cryptocurrency
 - [Telegram](https://telegram.org/) for the excellent bot API
-- [Ethers.js](https://ethers.org/) for Ethereum interactions
+- [Ethers.js](https://ethers.org/) for EVM chain interactions
 - [@solana/web3.js](https://solana-labs.github.io/solana-web3.js/) for Solana support
+- [Base](https://base.org/) for L2 Ethereum scaling
+- [Binance](https://www.bnbchain.org/) for BNB Smart Chain
 
 ---
 

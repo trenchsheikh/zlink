@@ -5,9 +5,17 @@ export const config = {
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
   },
-  evm: {
-    rpcUrl: process.env.EVM_RPC_URL,
-    walletAddress: process.env.EVM_WALLET_ADDRESS,
+  base: {
+    rpcUrl: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
+    walletAddress: process.env.BASE_WALLET_ADDRESS,
+    chainId: 8453,
+    name: 'Base',
+  },
+  bnb: {
+    rpcUrl: process.env.BNB_RPC_URL || 'https://bsc-dataseed.binance.org',
+    walletAddress: process.env.BNB_WALLET_ADDRESS,
+    chainId: 56,
+    name: 'BNB Smart Chain',
   },
   solana: {
     rpcUrl: process.env.SOLANA_RPC_URL,
@@ -42,8 +50,12 @@ export function validateConfig() {
   // Warn about optional configurations
   const warnings = [];
   
-  if (!process.env.EVM_RPC_URL || !process.env.EVM_WALLET_ADDRESS) {
-    warnings.push('⚠️  EVM monitoring not configured (missing EVM_RPC_URL or EVM_WALLET_ADDRESS)');
+  if (!process.env.BASE_WALLET_ADDRESS) {
+    warnings.push('⚠️  Base monitoring not configured (missing BASE_WALLET_ADDRESS)');
+  }
+  
+  if (!process.env.BNB_WALLET_ADDRESS) {
+    warnings.push('⚠️  BNB Smart Chain monitoring not configured (missing BNB_WALLET_ADDRESS)');
   }
   
   if (!process.env.SOLANA_RPC_URL || !process.env.SOL_WALLET_ADDRESS) {
