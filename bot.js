@@ -217,7 +217,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       if (!walletAddress) {
         await this.bot.sendMessage(
           chatId,
-          '❌ Please provide your wallet address.\n\n*Usage:*\n`/register 0xYourEVMAddress`\n`/register YourSolanaAddress`\n\nThis helps us identify you when you send crypto to receive ZEC.',
+          '❌ Please provide your wallet address.\n\n*Usage:*\n`/register 0xYourAddress` (for Base/BNB)\n`/register YourSolanaAddress` (for Solana)\n\nThis helps us identify you when you send crypto to receive ZEC.',
           { parse_mode: 'Markdown' }
         );
         return;
@@ -703,13 +703,15 @@ Need help? Click the help button below.
 
 Register your wallet so we can identify you when you send crypto.
 
-*For EVM (Ethereum/BSC/Polygon):*
+*For Base Network or BNB Smart Chain:*
 \`/register 0xYourWalletAddress\`
 
 *For Solana:*
 \`/register YourSolanaAddress\`
 
 Send the command with your actual wallet address.
+
+*Note:* You can use the same 0x address for both Base and BNB!
     `;
 
     const keyboard = {
