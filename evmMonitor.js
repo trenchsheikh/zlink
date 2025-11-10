@@ -10,6 +10,10 @@ class EVMMonitor {
     this.enabled = false;
     this.provider = null;
     this.watchAddress = null;
+    
+    // Rate limiting backoff
+    this.rateLimitBackoff = 1000; // Start with 1 second
+    this.maxBackoff = 30000; // Max 30 seconds
 
     // Validate configuration before initializing
     if (!chainConfig.rpcUrl || !chainConfig.walletAddress) {
@@ -56,19 +60,23 @@ class EVMMonitor {
       // Listen for new blocks
       this.provider.on('block', async (blockNumber) => {
         try {
-          // Add small delay to avoid rate limiting on free RPCs
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Longer delay to avoid rate limiting (increased from 500ms to 2000ms)
+          await new Promise(resolve => setTimeout(resolve, 2000));
           await this.checkBlock(blockNumber);
         } catch (error) {
-          // Only log non-BAD_DATA errors
-          if (!error.message?.includes('BAD_DATA')) {
+          // Handle rate limiting gracefully
+          if (error.message?.includes('429') || error.message?.includes('rate limit') || error.message?.includes('compute units')) {
+            console.warn(`${this.chainName} - Rate limited, backing off for ${this.rateLimitBackoff}ms`);
+            await new Promise(resolve => setTimeout(resolve, this.rateLimitBackoff));
+            this.rateLimitBackoff = Math.min(this.rateLimitBackoff * 2, this.maxBackoff);
+          } else if (!error.message?.includes('BAD_DATA')) {
             console.error(`${this.chainName} - Error checking block:`, error.message);
           }
         }
       });
 
-      // Also scan recent blocks on startup
-      await this.scanRecentBlocks(10);
+      // Scan fewer blocks on startup to avoid rate limits (reduced from 10 to 3)
+      await this.scanRecentBlocks(3);
       
       console.log(`${this.chainName} monitor started successfully ✅`);
     } catch (error) {
@@ -86,11 +94,15 @@ class EVMMonitor {
         const blockNumber = currentBlock - i;
         try {
           await this.checkBlock(blockNumber);
-          // Small delay to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 200));
+          // Longer delay to avoid rate limiting (increased from 200ms to 1000ms)
+          await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (error) {
-          // Silently skip BAD_DATA errors during initial scan
-          if (!error.message?.includes('BAD_DATA')) {
+          // Handle rate limiting during initial scan
+          if (error.message?.includes('429') || error.message?.includes('rate limit') || error.message?.includes('compute units')) {
+            console.warn(`${this.chainName} - Rate limited during scan, waiting ${this.rateLimitBackoff}ms...`);
+            await new Promise(resolve => setTimeout(resolve, this.rateLimitBackoff));
+            this.rateLimitBackoff = Math.min(this.rateLimitBackoff * 2, this.maxBackoff);
+          } else if (!error.message?.includes('BAD_DATA')) {
             console.error(`${this.chainName} - Error scanning block ${blockNumber}:`, error.message);
           }
         }
@@ -103,36 +115,49 @@ class EVMMonitor {
 
   async checkBlock(blockNumber) {
     try {
+      // Get block with full transaction objects (true parameter)
       const block = await this.provider.getBlock(blockNumber, true);
       
       if (!block || !block.transactions) {
         return;
       }
 
-      for (const txHash of block.transactions) {
+      // Reset backoff on successful block fetch
+      this.rateLimitBackoff = 1000;
+
+      // Transaction objects are already included when getBlock(n, true) is used
+      // No need to call getTransaction() for each one - this was causing 95% of API calls!
+      for (const tx of block.transactions) {
         try {
-          const tx = typeof txHash === 'string' 
-            ? await this.provider.getTransaction(txHash)
-            : txHash;
-          
+          // tx is already a full transaction object, not just a hash
           if (!tx || !tx.to) continue;
 
           const toAddress = tx.to.toLowerCase();
           
-          // Check if transaction is to our monitored address
+          // Only process transactions to our monitored address
           if (toAddress === this.watchAddress) {
             await this.processTransaction(tx);
           }
         } catch (error) {
-          // Silently skip transactions that fail to fetch (common with free RPCs)
-          // Only log if it's not a BAD_DATA error
-          if (!error.message?.includes('BAD_DATA') && !error.code?.includes('BAD_DATA')) {
+          // Handle rate limiting gracefully
+          if (error.message?.includes('429') || error.message?.includes('rate limit') || error.message?.includes('compute units')) {
+            console.warn(`${this.chainName} - Rate limited in tx processing, backing off...`);
+            await new Promise(resolve => setTimeout(resolve, this.rateLimitBackoff));
+            this.rateLimitBackoff = Math.min(this.rateLimitBackoff * 2, this.maxBackoff);
+          } else if (!error.message?.includes('BAD_DATA') && !error.code?.includes('BAD_DATA')) {
             console.error(`${this.chainName} - Error processing transaction:`, error.message);
           }
         }
       }
     } catch (error) {
-      console.error(`Error checking block ${blockNumber}:`, error.message);
+      // Handle rate limiting at block level
+      if (error.message?.includes('429') || error.message?.includes('rate limit') || error.message?.includes('compute units')) {
+        console.warn(`${this.chainName} - Rate limited fetching block, backing off for ${this.rateLimitBackoff}ms`);
+        await new Promise(resolve => setTimeout(resolve, this.rateLimitBackoff));
+        this.rateLimitBackoff = Math.min(this.rateLimitBackoff * 2, this.maxBackoff);
+      } else {
+        console.error(`${this.chainName} - Error checking block ${blockNumber}:`, error.message);
+      }
     }
   }
 
