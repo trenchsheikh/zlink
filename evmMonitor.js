@@ -51,32 +51,53 @@ class EVMMonitor {
     try {
       // Get current block number
       this.lastBlock = await this.provider.getBlockNumber();
-      console.log(`Current block: ${this.lastBlock}`);
+      console.log(`${this.chainName} - Current block: ${this.lastBlock}`);
 
       // Listen for new blocks
       this.provider.on('block', async (blockNumber) => {
         try {
+          // Add small delay to avoid rate limiting on free RPCs
+          await new Promise(resolve => setTimeout(resolve, 500));
           await this.checkBlock(blockNumber);
         } catch (error) {
-          console.error('Error checking block:', error);
+          // Only log non-BAD_DATA errors
+          if (!error.message?.includes('BAD_DATA')) {
+            console.error(`${this.chainName} - Error checking block:`, error.message);
+          }
         }
       });
 
       // Also scan recent blocks on startup
       await this.scanRecentBlocks(10);
+      
+      console.log(`${this.chainName} monitor started successfully ✅`);
     } catch (error) {
-      console.error('Error starting EVM monitor:', error.message);
-      console.log('⚠️  EVM monitoring may not work properly. Check your RPC URL.');
+      console.error(`❌ ${this.chainName} monitor error:`, error.message);
+      console.log(`💡 Tip: Free RPCs can be unreliable. Consider using Alchemy or QuickNode for production.`);
     }
   }
 
   async scanRecentBlocks(count) {
-    console.log(`Scanning last ${count} blocks...`);
-    const currentBlock = await this.provider.getBlockNumber();
-    
-    for (let i = count - 1; i >= 0; i--) {
-      const blockNumber = currentBlock - i;
-      await this.checkBlock(blockNumber);
+    console.log(`${this.chainName} - Scanning last ${count} blocks...`);
+    try {
+      const currentBlock = await this.provider.getBlockNumber();
+      
+      for (let i = count - 1; i >= 0; i--) {
+        const blockNumber = currentBlock - i;
+        try {
+          await this.checkBlock(blockNumber);
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          // Silently skip BAD_DATA errors during initial scan
+          if (!error.message?.includes('BAD_DATA')) {
+            console.error(`${this.chainName} - Error scanning block ${blockNumber}:`, error.message);
+          }
+        }
+      }
+      console.log(`${this.chainName} - Initial scan complete`);
+    } catch (error) {
+      console.error(`${this.chainName} - Error during initial scan:`, error.message);
     }
   }
 
@@ -103,7 +124,11 @@ class EVMMonitor {
             await this.processTransaction(tx);
           }
         } catch (error) {
-          console.error(`Error processing transaction:`, error.message);
+          // Silently skip transactions that fail to fetch (common with free RPCs)
+          // Only log if it's not a BAD_DATA error
+          if (!error.message?.includes('BAD_DATA') && !error.code?.includes('BAD_DATA')) {
+            console.error(`${this.chainName} - Error processing transaction:`, error.message);
+          }
         }
       }
     } catch (error) {
