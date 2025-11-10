@@ -1,0 +1,138 @@
+import { config, validateConfig } from './config.js';
+import db from './database.js';
+import ZlinkBot from './bot.js';
+import EVMMonitor from './evmMonitor.js';
+import SolanaMonitor from './solanaMonitor.js';
+import WebServer from './webServer.js';
+
+class ZlinkApp {
+  constructor() {
+    this.bot = null;
+    this.evmMonitor = null;
+    this.solanaMonitor = null;
+    this.webServer = null;
+  }
+
+  async start() {
+    console.log('🚀 Starting Zlink Bot...\n');
+
+    try {
+      // Validate configuration
+      validateConfig();
+
+      // Initialize Telegram bot
+      this.bot = new ZlinkBot();
+      this.bot.start();
+
+      // Initialize transaction monitors
+      this.evmMonitor = new EVMMonitor(this.handleTransaction.bind(this));
+      this.solanaMonitor = new SolanaMonitor(this.handleTransaction.bind(this));
+
+      // Start monitors
+      await this.evmMonitor.start();
+      await this.solanaMonitor.start();
+
+      // Start web server
+      this.webServer = new WebServer(3000);
+      this.webServer.start();
+
+      console.log('\n✅ All services started successfully!');
+      console.log('\n📊 Status:');
+      console.log(`   - Telegram Bot: ✅ Running`);
+      console.log(`   - EVM Monitor: ${this.evmMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
+      console.log(`   - Solana Monitor: ${this.solanaMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
+      console.log(`   - Web Server: ✅ Running`);
+      
+      if (this.evmMonitor.enabled || this.solanaMonitor.enabled) {
+        console.log('\n💡 Bot is now monitoring transactions...\n');
+      } else {
+        console.log('\n⚠️  No blockchain monitors are active. Configure EVM_RPC_URL/EVM_WALLET_ADDRESS or SOLANA_RPC_URL/SOL_WALLET_ADDRESS in .env\n');
+      }
+    } catch (error) {
+      console.error('❌ Failed to start application:', error);
+      process.exit(1);
+    }
+  }
+
+  async handleTransaction(transaction) {
+    console.log('\n🔔 Processing transaction:', transaction.txHash);
+
+    // Here you would implement your logic to determine which user should receive the reward
+    // For this example, we'll need to either:
+    // 1. Have a mapping of wallet addresses to Telegram users
+    // 2. Extract user information from the transaction memo/data
+    // 3. Have users register their wallet addresses with the bot
+
+    // Example: Let's say you have a way to get the user from the transaction
+    // For now, this is a placeholder - you'll need to implement your own logic
+    const userId = await this.getUserFromTransaction(transaction);
+    const username = await this.getUsernameFromTransaction(transaction);
+
+    if (userId && username) {
+      // Notify the user about their reward
+      await this.bot.notifyUser(userId, username, transaction);
+    } else {
+      console.log('⚠️  Could not determine recipient for transaction');
+      // You might want to store this for later processing
+    }
+  }
+
+  async getUserFromTransaction(transaction) {
+    // Look up the sender's address in the database
+    const user = db.getUserByWallet(transaction.from);
+    
+    if (!user) {
+      console.log(`⚠️  No user found for wallet address: ${transaction.from}`);
+      console.log('   User needs to register with /register command');
+      return null;
+    }
+    
+    console.log(`✅ Found user @${user.telegram_username} for wallet ${transaction.from}`);
+    return user.telegram_user_id;
+  }
+
+  async getUsernameFromTransaction(transaction) {
+    // Look up the sender's address in the database
+    const user = db.getUserByWallet(transaction.from);
+    return user?.telegram_username || null;
+  }
+
+  async stop() {
+    console.log('\n🛑 Stopping Zlink Bot...');
+
+    if (this.evmMonitor) {
+      this.evmMonitor.stop();
+    }
+
+    if (this.solanaMonitor) {
+      this.solanaMonitor.stop();
+    }
+
+    if (this.bot) {
+      this.bot.stop();
+    }
+
+    if (this.webServer) {
+      this.webServer.stop();
+    }
+
+    db.close();
+
+    console.log('✅ All services stopped');
+    process.exit(0);
+  }
+}
+
+// Create and start the application
+const app = new ZlinkApp();
+
+// Handle graceful shutdown
+process.on('SIGINT', () => app.stop());
+process.on('SIGTERM', () => app.stop());
+
+// Start the application
+app.start().catch(error => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
+

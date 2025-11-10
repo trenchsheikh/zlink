@@ -1,0 +1,24 @@
+{
+  "name": "zlink-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot that monitors EVM/SOL transactions and distributes Zcash via magic links",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": ["telegram", "bot", "zcash", "ethereum", "solana", "crypto"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "ethers": "^6.13.0",
+    "@solana/web3.js": "^1.95.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "uuid": "^10.0.0",
+    "better-sqlite3": "^11.0.0"
+  }
+}
+
