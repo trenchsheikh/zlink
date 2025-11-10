@@ -1,0 +1,67 @@
+# ==============================================
+# Zlink Bot Configuration
+# ==============================================
+# Copy this file to .env and fill in your values
+
+# ----------------------------------------------
+# TELEGRAM (REQUIRED)
+# ----------------------------------------------
+# Get your bot token from @BotFather on Telegram
+# Instructions: https://core.telegram.org/bots#6-botfather
+TELEGRAM_BOT_TOKEN=
+
+# ----------------------------------------------
+# BASE NETWORK CONFIGURATION
+# ----------------------------------------------
+# Free public RPC (no API key needed)
+BASE_RPC_URL=https://mainnet.base.org
+
+# Your Base wallet address to receive payments
+# Example: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+BASE_WALLET_ADDRESS=
+
+# ----------------------------------------------
+# BNB SMART CHAIN CONFIGURATION
+# ----------------------------------------------
+# Free public RPC (no API key needed)
+BNB_RPC_URL=https://bsc-dataseed.binance.org
+
+# Your BNB Smart Chain wallet address to receive payments
+# Example: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+BNB_WALLET_ADDRESS=
+
+# ----------------------------------------------
+# SOLANA CONFIGURATION
+# ----------------------------------------------
+# Free public RPC
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+
+# Your Solana wallet address to receive payments
+# Example: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+SOL_WALLET_ADDRESS=
+
+# ----------------------------------------------
+# ZCASH CONFIGURATION (Optional - defaults to mock mode)
+# ----------------------------------------------
+# If you have a Zcash node, configure it here
+# Otherwise, the bot will run in mock mode for testing
+ZCASH_RPC_URL=http://localhost:8232
+ZCASH_RPC_USER=
+ZCASH_RPC_PASSWORD=
+ZCASH_WALLET_ADDRESS=
+
+# ----------------------------------------------
+# MAGIC LINK CONFIGURATION
+# ----------------------------------------------
+# Base URL for your web server (for magic link claims)
+BASE_URL=http://localhost:3000
+
+# How long magic links are valid (in hours)
+LINK_EXPIRY_HOURS=24
+
+# ----------------------------------------------
+# DISTRIBUTION SETTINGS
+# ----------------------------------------------
+# How much ZEC to give per transaction
+ZEC_AMOUNT_PER_TRANSACTION=0.01
+
