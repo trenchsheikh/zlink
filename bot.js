@@ -1044,6 +1044,59 @@ Click the "🌐 Claim via Web" button
     });
   }
 
+  // Helper function to safely send messages and handle blocked users
+  async safeSendMessage(chatId, text, options = {}) {
+    try {
+      const result = await this.bot.sendMessage(chatId, text, options);
+      return result;
+    } catch (error) {
+      // Check if it's a Telegram API error
+      if (error.response && error.response.body) {
+        const errorCode = error.response.body.error_code;
+        const description = error.response.body.description || '';
+        
+        if (errorCode === 403) {
+          // User blocked the bot or deleted the chat
+          if (description.includes('blocked')) {
+            console.warn(`⚠️  User ${chatId} has blocked the bot`);
+          } else if (description.includes('deleted')) {
+            console.warn(`⚠️  Chat ${chatId} was deleted`);
+          } else {
+            console.warn(`⚠️  Cannot send to ${chatId}: ${description}`);
+          }
+          return null;
+        }
+        
+        if (errorCode === 400) {
+          if (description.includes('chat not found')) {
+            console.warn(`⚠️  Chat ${chatId} not found`);
+            return null;
+          }
+          if (description.includes('user is deactivated')) {
+            console.warn(`⚠️  User ${chatId} account is deactivated`);
+            return null;
+          }
+        }
+        
+        if (errorCode === 429) {
+          // Rate limit - wait and retry once
+          const retryAfter = error.response.body.parameters?.retry_after || 1;
+          console.warn(`⚠️  Rate limited, waiting ${retryAfter} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          try {
+            return await this.bot.sendMessage(chatId, text, options);
+          } catch (retryError) {
+            console.error(`❌ Retry failed for ${chatId}:`, retryError.message);
+            return null;
+          }
+        }
+      }
+      
+      // For unknown errors, re-throw
+      throw error;
+    }
+  }
+
   async notifyUser(userId, username, transaction) {
     try {
       // Generate magic link
@@ -1080,19 +1133,24 @@ Click the "🌐 Claim via Web" button
         ],
       };
 
-      await this.bot.sendMessage(userId, message, {
+      const sent = await this.safeSendMessage(userId, message, {
         parse_mode: 'Markdown',
         reply_markup: keyboard,
       });
 
-      console.log(`✉️  Notification sent to @${username}`);
+      if (sent) {
+        console.log(`✉️  Notification sent to @${username} (${userId})`);
+      } else {
+        console.log(`⚠️  Could not notify @${username} (${userId}) - user may have blocked bot`);
+      }
     } catch (error) {
-      console.error(`Error notifying user ${username}:`, error.message);
+      console.error(`❌ Error notifying user ${username}:`, error.message);
     }
   }
 
   async sendMessage(chatId, text, options = {}) {
-    return await this.bot.sendMessage(chatId, text, options);
+    // Use safeSendMessage to handle blocked users gracefully
+    return await this.safeSendMessage(chatId, text, options);
   }
 
   start() {
