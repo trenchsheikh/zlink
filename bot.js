@@ -43,7 +43,7 @@ class ZlinkBot {
       const username = msg.from.username || 'Unknown';
 
       // Create or update user
-      db.createOrUpdateUser(userId, username);
+      await db.createOrUpdateUser(userId, username);
 
       const welcomeMessage = `
 🎉 *Welcome to Zlink!*
@@ -266,7 +266,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
 
       try {
         // Save wallet mapping
-        db.saveUserWallet(userId, username, walletAddress);
+        await db.saveUserWallet(userId, username, walletAddress);
 
         const chain = isEVM ? 'Base/BNB' : 'Solana';
       const keyboard = {
@@ -303,7 +303,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       const userId = msg.from.id;
 
       try {
-        const wallets = db.getUserWallets(userId);
+        const wallets = await db.getUserWallets(userId);
 
         if (!wallets || wallets.length === 0) {
           await this.bot.sendMessage(
@@ -379,8 +379,8 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       }
 
       // Save address
-      db.createOrUpdateUser(userId, username, address);
-      db.updateUserZcashAddress(userId, address);
+      await db.createOrUpdateUser(userId, username, address);
+      await db.updateUserZcashAddress(userId, address);
 
       const keyboard = {
         inline_keyboard: [
@@ -406,7 +406,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       const chatId = msg.chat.id;
       const userId = msg.from.id;
 
-      const user = db.getUser(userId);
+      const user = await db.getUser(userId);
 
       if (!user || !user.zcash_address) {
         await this.bot.sendMessage(
@@ -441,14 +441,14 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       const chatId = msg.chat.id;
       const userId = msg.from.id;
 
-      const user = db.getUser(userId);
+      const user = await db.getUser(userId);
 
       if (!user) {
         await this.bot.sendMessage(chatId, '❌ No statistics available. Use /start to register.');
         return;
       }
 
-      const wallets = db.getUserWallets(userId);
+      const wallets = await db.getUserWallets(userId);
       const walletCount = wallets?.length || 0;
 
       const statsMessage = `
@@ -520,7 +520,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       // Check for admin activation code
       if (text === '1020304') {
         // Activate admin session
-        db.createAdminSession(userId, 24);
+        await db.createAdminSession(userId, 24);
         
         // Delete the message containing the code for security
         try {
@@ -534,7 +534,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       }
 
       // Check if user is in admin session
-      const isAdmin = db.isAdminSession(userId);
+      const isAdmin = await db.isAdminSession(userId);
       if (isAdmin) {
         // Any message in admin mode keeps showing admin interface
         // (This allows admins to refresh the view)
@@ -629,7 +629,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
     await this.bot.answerCallbackQuery(query.id);
 
     // Check if admin is handling admin callbacks
-    const isAdmin = db.isAdminSession(userId);
+    const isAdmin = await db.isAdminSession(userId);
     
     // Handle admin actions
     if (isAdmin && data.startsWith('admin_')) {
@@ -639,7 +639,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       }
       
       if (data === 'admin_exit') {
-        db.clearAdminSession(userId);
+        await db.clearAdminSession(userId);
         await this.bot.editMessageText('👋 Exited admin mode', {
           chat_id: chatId,
           message_id: messageId,
@@ -896,7 +896,7 @@ Send the command with your actual wallet address.
   }
 
   async showMyWallets(chatId, userId) {
-    const wallets = db.getUserWallets(userId);
+    const wallets = await db.getUserWallets(userId);
 
     if (!wallets || wallets.length === 0) {
       const message = `
@@ -989,7 +989,7 @@ Send the command with your actual Zcash address.
   }
 
   async showMyAddress(chatId, userId) {
-    const user = db.getUser(userId);
+    const user = await db.getUser(userId);
 
     if (!user || !user.zcash_address) {
       const message = `
@@ -1038,14 +1038,14 @@ Set one to be able to receive ZEC!
   }
 
   async showMyStats(chatId, userId, username) {
-    const user = db.getUser(userId);
+    const user = await db.getUser(userId);
 
     if (!user) {
       await this.bot.sendMessage(chatId, '❌ No statistics available. Use /start to register.');
       return;
     }
 
-    const wallets = db.getUserWallets(userId);
+    const wallets = await db.getUserWallets(userId);
     const walletCount = wallets?.length || 0;
 
     const statsMessage = `
@@ -1209,7 +1209,7 @@ Click the "🌐 Claim via Web" button
 
   // Admin Panel Functions
   async showAdminPanel(chatId, userId, messageId = null) {
-    const pendingClaims = db.getPendingClaims();
+    const pendingClaims = await db.getPendingClaims();
     
     let message = `
 🔐 *ADMIN PANEL*
@@ -1277,7 +1277,7 @@ Click the "🌐 Claim via Web" button
   }
 
   async showClaimDetails(chatId, claimId, messageId) {
-    const claim = db.getPendingClaim(claimId);
+    const claim = await db.getPendingClaim(claimId);
     
     if (!claim) {
       await this.bot.editMessageText('❌ Claim not found or already processed', {
@@ -1337,7 +1337,7 @@ Approve to send ZEC or reject this claim.
   }
 
   async handleAdminApprove(chatId, userId, claimId, messageId) {
-    const claim = db.getPendingClaim(claimId);
+    const claim = await db.getPendingClaim(claimId);
     
     if (!claim) {
       await this.bot.answerCallbackQuery(userId, {
@@ -1348,7 +1348,7 @@ Approve to send ZEC or reject this claim.
     }
 
     // Update status
-    db.approvePendingClaim(claimId, `Approved by admin ${userId}`);
+    await db.approvePendingClaim(claimId, `Approved by admin ${userId}`);
 
     // Notify the user
     try {
@@ -1392,7 +1392,7 @@ Thank you for using Zlink! 🚀
   }
 
   async handleAdminReject(chatId, userId, claimId, messageId) {
-    const claim = db.getPendingClaim(claimId);
+    const claim = await db.getPendingClaim(claimId);
     
     if (!claim) {
       await this.bot.answerCallbackQuery(userId, {
@@ -1403,7 +1403,7 @@ Thank you for using Zlink! 🚀
     }
 
     // Update status
-    db.rejectPendingClaim(claimId, `Rejected by admin ${userId}`);
+    await db.rejectPendingClaim(claimId, `Rejected by admin ${userId}`);
 
     // Notify the user
     try {
@@ -1503,7 +1503,7 @@ Transaction Details:
     try {
       // Generate magic link
       const zecAmount = config.distribution.zecAmount;
-      const link = magicLink.generateLink(userId, username, zecAmount, transaction.txHash);
+      const link = await magicLink.generateLink(userId, username, zecAmount, transaction.txHash);
 
       const expiresDate = new Date(link.expiresAt).toLocaleString();
 

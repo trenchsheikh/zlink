@@ -165,7 +165,7 @@ class EVMMonitor {
     const txHash = tx.hash;
     
     // Check if already processed
-    const existing = db.getTransaction(txHash);
+    const existing = await db.getTransaction(txHash);
     if (existing && existing.processed) {
       return;
     }
@@ -186,7 +186,7 @@ class EVMMonitor {
       
       if (receipt.status === 1) {
         // Save to database
-        db.saveTransaction(txHash, this.chainName, fromAddress, toAddress, amount);
+        await db.saveTransaction(txHash, this.chainName, fromAddress, toAddress, amount);
         
         // Trigger callback
         if (this.onTransaction) {
@@ -199,7 +199,7 @@ class EVMMonitor {
           });
         }
         
-        db.markTransactionProcessed(txHash);
+        await db.markTransactionProcessed(txHash);
       }
     } catch (error) {
       console.error('Error waiting for transaction confirmation:', error);

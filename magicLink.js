@@ -5,12 +5,12 @@ import zcashService from './zcashService.js';
 import priceService from './priceService.js';
 
 class MagicLinkService {
-  generateLink(telegramUserId, telegramUsername, zecAmount, txHash) {
+  async generateLink(telegramUserId, telegramUsername, zecAmount, txHash) {
     const linkId = uuidv4();
     const expiresAt = Date.now() + (config.magicLink.expiryHours * 60 * 60 * 1000);
     
     // Save to database
-    db.createMagicLink(
+    await db.createMagicLink(
       linkId,
       telegramUserId,
       telegramUsername,
@@ -31,7 +31,7 @@ class MagicLinkService {
   }
 
   async claimLink(linkId, claimingUserId, claimingUsername, zcashAddress, allowSharing = false) {
-    const link = db.getMagicLink(linkId);
+    const link = await db.getMagicLink(linkId);
     
     if (!link) {
       return {
@@ -74,7 +74,7 @@ class MagicLinkService {
 
     try {
       // Get transaction details to calculate USD value
-      const transaction = db.getTransaction(link.tx_hash);
+      const transaction = await db.getTransaction(link.tx_hash);
       if (!transaction) {
         return {
           success: false,
@@ -99,7 +99,7 @@ class MagicLinkService {
 
       // Create pending claim for admin approval
       const claimId = uuidv4();
-      db.createPendingClaim(
+      await db.createPendingClaim(
         claimId,
         linkId,
         claimingUserId,
@@ -113,12 +113,12 @@ class MagicLinkService {
       );
 
       // Mark magic link as claimed
-      db.claimMagicLink(linkId);
+      await db.claimMagicLink(linkId);
 
       // Update user's Zcash address
       try {
-        db.createOrUpdateUser(claimingUserId, claimingUsername, zcashAddress);
-        db.updateUserZcashAddress(claimingUserId, zcashAddress);
+        await db.createOrUpdateUser(claimingUserId, claimingUsername, zcashAddress);
+        await db.updateUserZcashAddress(claimingUserId, zcashAddress);
       } catch (error) {
         console.log('Note: Could not update user info');
       }
@@ -145,8 +145,8 @@ class MagicLinkService {
     }
   }
 
-  getLinkInfo(linkId) {
-    const link = db.getMagicLink(linkId);
+  async getLinkInfo(linkId) {
+    const link = await db.getMagicLink(linkId);
     
     if (!link) {
       return null;
