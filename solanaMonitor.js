@@ -52,23 +52,34 @@ class SolanaMonitor {
 
     console.log(`Starting Solana monitor for address: ${this.watchAddress.toBase58()}`);
 
+    // Add delay before first request to avoid rate limits on startup
+    await this.sleep(2000);
+
     // Scan recent transactions on startup
     await this.scanRecentTransactions(10);
 
-    // Subscribe to account changes
-    this.subscriptionId = this.connection.onAccountChange(
-      this.watchAddress,
-      async (accountInfo, context) => {
-        console.log('Account changed, checking for new transactions...');
-        await this.checkNewTransactions();
-      },
-      'confirmed'
-    );
+    // Subscribe to account changes (WebSocket - doesn't count toward rate limit)
+    try {
+      this.subscriptionId = this.connection.onAccountChange(
+        this.watchAddress,
+        async (accountInfo, context) => {
+          console.log('Account changed, checking for new transactions...');
+          await this.checkNewTransactions();
+        },
+        'confirmed'
+      );
+    } catch (error) {
+      console.log('⚠️  WebSocket subscription failed, will rely on polling only');
+    }
 
-    // Also poll periodically as backup
+    // Poll periodically as backup (increased interval to avoid rate limits)
     this.pollInterval = setInterval(async () => {
       await this.checkNewTransactions();
-    }, 10000); // Check every 10 seconds
+    }, 30000); // Check every 30 seconds (reduced from 10s to avoid rate limits)
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   async scanRecentTransactions(limit = 10) {
@@ -82,9 +93,15 @@ class SolanaMonitor {
 
       for (const signatureInfo of signatures.reverse()) {
         await this.processSignature(signatureInfo.signature);
+        // Add delay between requests to avoid rate limits
+        await this.sleep(1000);
       }
     } catch (error) {
-      console.error('Error scanning recent transactions:', error);
+      if (error.message && error.message.includes('429')) {
+        console.log('⚠️  Solana RPC rate limit during startup scan. Will retry later...');
+      } else {
+        console.error('Error scanning recent transactions:', error.message || error);
+      }
     }
   }
 
@@ -98,10 +115,19 @@ class SolanaMonitor {
       for (const signatureInfo of signatures) {
         if (!this.processedSignatures.has(signatureInfo.signature)) {
           await this.processSignature(signatureInfo.signature);
+          // Add small delay between processing signatures to avoid rate limits
+          await this.sleep(500);
         }
       }
     } catch (error) {
-      console.error('Error checking new transactions:', error);
+      // Check if it's a rate limit error
+      if (error.message && error.message.includes('429')) {
+        console.log('⚠️  Solana RPC rate limit hit. Backing off...');
+        // Wait longer before next request
+        await this.sleep(5000);
+      } else {
+        console.error('Error checking new transactions:', error.message || error);
+      }
     }
   }
 
@@ -111,7 +137,7 @@ class SolanaMonitor {
       return;
     }
 
-    const existing = db.getTransaction(signature);
+    const existing = await db.getTransaction(signature);
     if (existing && existing.processed) {
       this.processedSignatures.add(signature);
       return;
@@ -170,7 +196,7 @@ class SolanaMonitor {
       console.log(`   Amount: ${amount} SOL`);
 
       // Save to database
-      db.saveTransaction(
+      await db.saveTransaction(
         signature,
         'Solana',
         fromAddress,
@@ -189,10 +215,15 @@ class SolanaMonitor {
         });
       }
 
-      db.markTransactionProcessed(signature);
+      await db.markTransactionProcessed(signature);
       this.processedSignatures.add(signature);
     } catch (error) {
-      console.error(`Error processing signature ${signature}:`, error);
+      if (error.message && error.message.includes('429')) {
+        console.log(`⚠️  Rate limit while processing ${signature.substring(0, 8)}... Will retry later`);
+        // Don't add to processed set so it can be retried
+      } else {
+        console.error(`Error processing signature ${signature}:`, error.message || error);
+      }
     }
   }
 

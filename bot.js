@@ -567,9 +567,34 @@ Your Zcash has been sent! Check your wallet in a few minutes.
     });
 
     // Error handling
-    this.bot.on('polling_error', (error) => {
+    this.bot.on('polling_error', async (error) => {
+      // Check for 409 Conflict - multiple bot instances running
+      if (error.code === 'ETELEGRAM' && error.response?.statusCode === 409) {
+        console.log('\n❌ CRITICAL ERROR: Another bot instance is already running!');
+        console.log('   Possible causes:');
+        console.log('   1. Bot is running locally AND on Render');
+        console.log('   2. Multiple Render deployments are active');
+        console.log('   3. Previous instance didn\'t shut down properly');
+        console.log('\n🛑 Shutting down this instance to prevent conflicts...\n');
+        
+        try {
+          await this.bot.stopPolling();
+        } catch (e) {
+          console.error('Error stopping bot:', e);
+        }
+        process.exit(1);
+      } else if (error.message && error.message.includes('409')) {
+        // Fallback check for 409 in message
+        console.log('\n❌ Bot conflict detected (409) - shutting down...\n');
+        try {
+          await this.bot.stopPolling();
+        } catch (e) {
+          console.error('Error stopping bot:', e);
+        }
+        process.exit(1);
+      }
       // Silently ignore common network hiccups - they're normal and auto-recover
-      if (error.code === 'EFATAL' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+      else if (error.code === 'EFATAL' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
         // Only log if multiple errors occur within 30 seconds (indicates real issue)
         const now = Date.now();
         if (now - this.lastConnectionErrorTime < 30000) {
