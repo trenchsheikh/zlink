@@ -21,6 +21,10 @@ class ZlinkApp {
       // Validate configuration
       validateConfig();
 
+      // Connect to MongoDB first
+      console.log('📊 Connecting to MongoDB...');
+      await db.connect();
+
       // Initialize Telegram bot
       this.bot = new ZlinkBot();
       this.bot.start();
@@ -37,7 +41,20 @@ class ZlinkApp {
 
       // Start web server
       this.webServer = new WebServer(3000);
-      this.webServer.start();
+      let webServerStatus = '✅ Running';
+      try {
+        this.webServer.start();
+        // Give it a moment to detect port conflicts
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (this.webServer.server && this.webServer.server.listening) {
+          webServerStatus = '✅ Running';
+        } else {
+          webServerStatus = '⚠️  Port in use';
+        }
+      } catch (error) {
+        webServerStatus = '❌ Failed';
+        console.log('⚠️  Web server could not start, but bot will continue...');
+      }
 
       console.log('\n✅ All services started successfully!');
       console.log('\n📊 Status:');
@@ -45,7 +62,7 @@ class ZlinkApp {
       console.log(`   - Base Monitor: ${this.baseMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
       console.log(`   - BNB Monitor: ${this.bnbMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
       console.log(`   - Solana Monitor: ${this.solanaMonitor.enabled ? '✅ Running' : '⚠️  Disabled'}`);
-      console.log(`   - Web Server: ✅ Running`);
+      console.log(`   - Web Server: ${webServerStatus}`);
       
       const anyEnabled = this.baseMonitor.enabled || this.bnbMonitor.enabled || this.solanaMonitor.enabled;
       if (anyEnabled) {
@@ -84,7 +101,7 @@ class ZlinkApp {
 
   async getUserFromTransaction(transaction) {
     // Look up the sender's address in the database
-    const user = db.getUserByWallet(transaction.from);
+    const user = await db.getUserByWallet(transaction.from);
     
     if (!user) {
       console.log(`⚠️  No user found for wallet address: ${transaction.from}`);
@@ -98,7 +115,7 @@ class ZlinkApp {
 
   async getUsernameFromTransaction(transaction) {
     // Look up the sender's address in the database
-    const user = db.getUserByWallet(transaction.from);
+    const user = await db.getUserByWallet(transaction.from);
     return user?.telegram_username || null;
   }
 
@@ -125,7 +142,7 @@ class ZlinkApp {
       this.webServer.stop();
     }
 
-    db.close();
+    await db.close();
 
     console.log('✅ All services stopped');
     process.exit(0);

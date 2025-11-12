@@ -6,7 +6,17 @@ import zcashService from './zcashService.js';
 
 class ZlinkBot {
   constructor() {
-    this.bot = new TelegramBot(config.telegram.botToken, { polling: true });
+    this.bot = new TelegramBot(config.telegram.botToken, { 
+      polling: {
+        interval: 300,
+        autoStart: true,
+        params: {
+          timeout: 10
+        }
+      }
+    });
+    this.connectionErrorCount = 0;
+    this.lastConnectionErrorTime = 0;
     this.setupCommands();
     this.setupHandlers();
   }
@@ -17,9 +27,9 @@ class ZlinkBot {
       { command: 'start', description: 'Start the bot and see main menu' },
       { command: 'claim', description: 'Claim ZEC with a magic link code' },
       { command: 'howtoget', description: 'See where to send crypto to get ZEC' },
-      { command: 'register', description: 'Register your wallet address' },
-      { command: 'mywallets', description: 'View your registered wallets' },
-      { command: 'setaddress', description: 'Set your Zcash receiving address' },
+      { command: 'register', description: 'Register your sender wallet address' },
+      { command: 'mywallets', description: 'View your registered sender wallets' },
+      { command: 'setaddress', description: 'Set your ZEC receiving address' },
       { command: 'mystats', description: 'View your statistics' },
       { command: 'help', description: 'Show help information' },
     ]);
@@ -46,10 +56,10 @@ The easiest way to get Zcash! Send crypto from Base, BNB Chain, or Solana and re
 🟣 Solana
 
 *How it works:*
-1. Register your wallet address
-2. Send crypto to our address
-3. Receive your ZEC magic link instantly
-4. Claim your Zcash!
+1. Register your sender wallet address (Base/BNB/Solana)
+2. Set your ZEC receiver address
+3. Send crypto to our address
+4. Receive your ZEC magic link instantly!
 
 Ready to get started? 👇
       `;
@@ -166,7 +176,24 @@ Ready to get started? 👇
             ]
           };
 
-          const message = `
+          let message;
+          if (result.processing) {
+            // Show processing message for manual approval
+            message = `
+✅ *Claim Submitted Successfully!*
+
+💰 Amount: ${result.amount} ZEC
+📍 Will be sent to: \`${result.zcashAddress}\`
+${result.originalRecipient ? `🎁 Originally for: @${result.originalRecipient}\n` : ''}
+⏳ *Processing Time:* ${result.estimatedTime}
+
+Your transaction is being processed. Please wait 5-7 minutes for the Zcash to arrive in your wallet.
+
+We'll notify you once the transaction is complete! 🚀
+            `;
+          } else {
+            // Legacy immediate send message (kept for backwards compatibility)
+            message = `
 ✅ *Claim Successful!*
 
 💰 Amount: ${result.amount} ZEC
@@ -175,7 +202,8 @@ Ready to get started? 👇
 ${result.originalRecipient ? `\n🎁 Originally for: @${result.originalRecipient}` : ''}
 
 Your Zcash has been sent! Check your wallet in a few minutes.
-          `;
+            `;
+          }
 
           await this.bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
@@ -478,22 +506,90 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       }
     });
 
+    // Handle text messages for admin code detection
+    this.bot.on('text', async (msg) => {
+      // Skip if it's a command (already handled by command handlers)
+      if (msg.text && msg.text.startsWith('/')) {
+        return;
+      }
+
+      const chatId = msg.chat.id;
+      const userId = msg.from.id;
+      const text = msg.text?.trim();
+
+      // Check for admin activation code
+      if (text === '1020304') {
+        // Activate admin session
+        db.createAdminSession(userId, 24);
+        
+        // Delete the message containing the code for security
+        try {
+          await this.bot.deleteMessage(chatId, msg.message_id);
+        } catch (error) {
+          console.log('Could not delete admin code message');
+        }
+
+        await this.showAdminPanel(chatId, userId);
+        return;
+      }
+
+      // Check if user is in admin session
+      const isAdmin = db.isAdminSession(userId);
+      if (isAdmin) {
+        // Any message in admin mode keeps showing admin interface
+        // (This allows admins to refresh the view)
+        return;
+      }
+    });
+
     // Handle callback queries (for inline buttons)
     this.bot.on('callback_query', async (query) => {
       try {
         await this.handleCallbackQuery(query);
       } catch (error) {
-        console.error('Error handling callback query:', error);
-        await this.bot.answerCallbackQuery(query.id, {
-          text: '❌ An error occurred. Please try again.',
-          show_alert: true
-        });
+        console.error('Error handling callback query:', error.message || error);
+        
+        // Try to answer callback, but ignore if it fails (query might be too old)
+        try {
+          await this.bot.answerCallbackQuery(query.id, {
+            text: '❌ An error occurred. Please try again.',
+            show_alert: true
+          });
+        } catch (answerError) {
+          // Silently ignore "query too old" or connection errors
+          if (answerError.message && 
+              !answerError.message.includes('query is too old') && 
+              !answerError.message.includes('ECONNRESET')) {
+            console.error('Could not answer callback:', answerError.message);
+          }
+        }
       }
     });
 
     // Error handling
     this.bot.on('polling_error', (error) => {
-      console.error('Telegram polling error:', error);
+      // Silently ignore common network hiccups - they're normal and auto-recover
+      if (error.code === 'EFATAL' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+        // Only log if multiple errors occur within 30 seconds (indicates real issue)
+        const now = Date.now();
+        if (now - this.lastConnectionErrorTime < 30000) {
+          this.connectionErrorCount++;
+          if (this.connectionErrorCount === 3) {
+            console.log('⚠️  Telegram connection unstable (multiple retries in progress...)');
+          }
+        } else {
+          // Reset counter if errors are spaced out (normal)
+          this.connectionErrorCount = 1;
+        }
+        this.lastConnectionErrorTime = now;
+        return; // Don't log individual network hiccups
+      } else if (error.message && error.message.includes('query is too old')) {
+        // Silently ignore "query too old" errors
+        return;
+      } else {
+        // Log unexpected errors
+        console.error('Telegram polling error:', error.message || error);
+      }
     });
   }
 
@@ -506,6 +602,48 @@ Your Zcash has been sent! Check your wallet in a few minutes.
 
     // Answer the callback query first
     await this.bot.answerCallbackQuery(query.id);
+
+    // Check if admin is handling admin callbacks
+    const isAdmin = db.isAdminSession(userId);
+    
+    // Handle admin actions
+    if (isAdmin && data.startsWith('admin_')) {
+      if (data === 'admin_refresh') {
+        await this.showAdminPanel(chatId, userId, messageId);
+        return;
+      }
+      
+      if (data === 'admin_exit') {
+        db.clearAdminSession(userId);
+        await this.bot.editMessageText('👋 Exited admin mode', {
+          chat_id: chatId,
+          message_id: messageId,
+        });
+        // Show normal menu
+        await this.showMainMenu(chatId);
+        return;
+      }
+
+      if (data.startsWith('admin_approve_')) {
+        const claimId = data.replace('admin_approve_', '');
+        await this.handleAdminApprove(chatId, userId, claimId, messageId);
+        return;
+      }
+
+      if (data.startsWith('admin_reject_')) {
+        const claimId = data.replace('admin_reject_', '');
+        await this.handleAdminReject(chatId, userId, claimId, messageId);
+        return;
+      }
+
+      if (data.startsWith('admin_view_')) {
+        const claimId = data.replace('admin_view_', '');
+        await this.showClaimDetails(chatId, claimId, messageId);
+        return;
+      }
+
+      return;
+    }
 
     // Handle different menu actions
     switch(data) {
@@ -604,12 +742,12 @@ Choose an option below:
 
 Follow these simple steps:
 
-*Step 1:* Register your wallet
+*Step 1:* Register your sender wallet
 \`/register 0xYourWalletAddress\`
 or
 \`/register YourSolanaAddress\`
 
-*Step 2:* Set your Zcash address
+*Step 2:* Set your ZEC receiving address
 \`/setaddress t1YourZcashAddress\`
 
 *Step 3:* Send crypto to our address
@@ -666,8 +804,8 @@ Send crypto to these addresses and receive ZEC instantly!
 (Custom amounts coming soon!)
 
 *How it works:*
-1️⃣ Register your wallet with /register
-2️⃣ Set your ZEC address with /setaddress
+1️⃣ Register your sender wallet with /register
+2️⃣ Set your ZEC receiving address with /setaddress
 3️⃣ Send crypto from your registered wallet to the address above
 4️⃣ Receive your magic link instantly!
 
@@ -699,9 +837,9 @@ Need help? Click the help button below.
 
   async showRegisterPrompt(chatId) {
     const message = `
-📝 *Register Your Wallet*
+📝 *Register Your Sender Wallet*
 
-Register your wallet so we can identify you when you send crypto.
+Register your sender wallet so we can identify you when you send crypto.
 
 *For Base Network or BNB Smart Chain:*
 \`/register 0xYourWalletAddress\`
@@ -942,8 +1080,8 @@ Set one to be able to receive ZEC!
 ❓ *Zlink Help*
 
 *How It Works:*
-1️⃣ Register your wallet
-2️⃣ Set your ZEC address
+1️⃣ Register your sender wallet address (Base/BNB/Solana)
+2️⃣ Set your ZEC receiver address
 3️⃣ Send crypto to our address
 4️⃣ Receive ZEC magic link instantly!
 
@@ -951,9 +1089,9 @@ Set one to be able to receive ZEC!
 /start - Start the bot
 /claim <code> <address> - Claim ZEC with magic link code
 /howtoget - See where to send crypto
-/register <wallet> - Register your wallet
-/mywallets - View your registered wallets
-/setaddress <address> - Set your Zcash address
+/register <wallet> - Register your sender wallet
+/mywallets - View your registered sender wallets
+/setaddress <address> - Set your ZEC receiving address
 /mystats - View your statistics
 
 *Supported Networks:*
@@ -962,8 +1100,8 @@ Set one to be able to receive ZEC!
 🟣 Solana
 
 *Example:*
-1. Register: \`/register 0xYourAddress\`
-2. Set ZEC: \`/setaddress t1YourZecAddress\`
+1. Register sender wallet: \`/register 0xYourAddress\`
+2. Set ZEC receiving address: \`/setaddress t1YourZecAddress\`
 3. Send crypto to our address (click "Get ZEC")
 4. Receive your magic link!
 5. Claim: \`/claim abc123-def456 t1YourZecAddress\`
@@ -1043,6 +1181,245 @@ Click the "🌐 Claim via Web" button
       reply_markup: keyboard
     });
   }
+
+  // Admin Panel Functions
+  async showAdminPanel(chatId, userId, messageId = null) {
+    const pendingClaims = db.getPendingClaims();
+    
+    let message = `
+🔐 *ADMIN PANEL*
+━━━━━━━━━━━━━━━━━
+
+📋 *Pending Claims:* ${pendingClaims.length}
+
+`;
+
+    if (pendingClaims.length === 0) {
+      message += '✅ No pending claims at the moment.\n\n';
+      message += '_e.g., when claims arrive, they will appear as:_\n';
+      message += '`1. SOL $50.00 → 1.1 ZEC`\n';
+      message += '`2. ETH $125.00 → 2.75 ZEC`\n\n';
+    } else {
+      message += '👇 Select a claim to review:\n\n';
+    }
+
+    message += `🔄 Last updated: ${new Date().toLocaleTimeString()}`;
+
+    const keyboard = {
+      inline_keyboard: []
+    };
+
+    // Add buttons for each pending claim
+    pendingClaims.forEach((claim, index) => {
+      const shortId = claim.claim_id.substring(0, 8);
+      keyboard.inline_keyboard.push([
+        { 
+          text: `${index + 1}. ${claim.coin_type} $${claim.amount_usd} → ${claim.zcash_amount} ZEC`, 
+          callback_data: `admin_view_${claim.claim_id}` 
+        }
+      ]);
+    });
+
+    // Add control buttons
+    keyboard.inline_keyboard.push([
+      { text: '🔄 Refresh', callback_data: 'admin_refresh' },
+      { text: '🚪 Exit Admin', callback_data: 'admin_exit' }
+    ]);
+
+    if (messageId) {
+      try {
+        await this.bot.editMessageText(message, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      } catch (error) {
+        // If edit fails, send new message
+        await this.bot.sendMessage(chatId, message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      }
+    } else {
+      await this.bot.sendMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+    }
+
+    console.log(`🔐 Admin panel opened by user ${userId}`);
+  }
+
+  async showClaimDetails(chatId, claimId, messageId) {
+    const claim = db.getPendingClaim(claimId);
+    
+    if (!claim) {
+      await this.bot.editMessageText('❌ Claim not found or already processed', {
+        chat_id: chatId,
+        message_id: messageId,
+      });
+      return;
+    }
+
+    const created = new Date(claim.created_at).toLocaleString();
+    const txShort = claim.tx_hash ? claim.tx_hash.substring(0, 10) + '...' : 'N/A';
+
+    const message = `
+🔐 *CLAIM DETAILS*
+━━━━━━━━━━━━━━━━━
+
+👤 *User:* @${claim.telegram_username}
+🆔 *User ID:* \`${claim.telegram_user_id}\`
+
+💰 *Transaction:*
+   Coin: ${claim.coin_type}
+   Amount Sent: ${claim.amount_sent}
+   USD Value: $${claim.amount_usd}
+   TX: \`${txShort}\`
+
+💎 *Zcash Transfer:*
+   Amount: ${claim.zcash_amount} ZEC
+   After Fee: 1% ($${(parseFloat(claim.amount_usd) * 0.01).toFixed(2)})
+   To Address: \`${claim.zcash_address}\`
+
+📅 *Created:* ${created}
+📊 *Status:* ${claim.status.toUpperCase()}
+
+━━━━━━━━━━━━━━━━━
+💡 *Action Required:*
+Approve to send ZEC or reject this claim.
+    `;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '✅ Approve & Send', callback_data: `admin_approve_${claimId}` },
+          { text: '❌ Reject', callback_data: `admin_reject_${claimId}` }
+        ],
+        [
+          { text: '← Back to Panel', callback_data: 'admin_refresh' }
+        ]
+      ]
+    };
+
+    await this.bot.editMessageText(message, {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+
+  async handleAdminApprove(chatId, userId, claimId, messageId) {
+    const claim = db.getPendingClaim(claimId);
+    
+    if (!claim) {
+      await this.bot.answerCallbackQuery(userId, {
+        text: '❌ Claim not found',
+        show_alert: true
+      });
+      return;
+    }
+
+    // Update status
+    db.approvePendingClaim(claimId, `Approved by admin ${userId}`);
+
+    // Notify the user
+    try {
+      const userMessage = `
+✅ *Transaction Approved!*
+
+Your Zcash has been sent! 🎉
+
+💰 Amount: ${claim.zcash_amount} ZEC
+📍 Address: \`${claim.zcash_address}\`
+
+Please allow a few minutes for the transaction to appear in your wallet.
+
+Thank you for using Zlink! 🚀
+      `;
+
+      await this.bot.sendMessage(claim.telegram_user_id, userMessage, {
+        parse_mode: 'Markdown'
+      });
+      
+      console.log(`✅ Claim ${claimId} approved by admin ${userId}`);
+      console.log(`   User @${claim.telegram_username} notified`);
+    } catch (error) {
+      console.error('Could not notify user:', error);
+    }
+
+    // Update admin panel
+    await this.bot.editMessageText(
+      `✅ *Claim Approved*\n\nUser @${claim.telegram_username} has been notified.\nZEC Amount: ${claim.zcash_amount}`,
+      {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '← Back to Panel', callback_data: 'admin_refresh' }
+          ]]
+        }
+      }
+    );
+  }
+
+  async handleAdminReject(chatId, userId, claimId, messageId) {
+    const claim = db.getPendingClaim(claimId);
+    
+    if (!claim) {
+      await this.bot.answerCallbackQuery(userId, {
+        text: '❌ Claim not found',
+        show_alert: true
+      });
+      return;
+    }
+
+    // Update status
+    db.rejectPendingClaim(claimId, `Rejected by admin ${userId}`);
+
+    // Notify the user
+    try {
+      const userMessage = `
+❌ *Transaction Update*
+
+We're sorry, but we were unable to process your claim at this time.
+
+If you believe this is an error, please contact support.
+
+Transaction Details:
+• Amount: ${claim.amount_sent} ${claim.coin_type}
+• USD Value: $${claim.amount_usd}
+      `;
+
+      await this.bot.sendMessage(claim.telegram_user_id, userMessage, {
+        parse_mode: 'Markdown'
+      });
+      
+      console.log(`❌ Claim ${claimId} rejected by admin ${userId}`);
+      console.log(`   User @${claim.telegram_username} notified`);
+    } catch (error) {
+      console.error('Could not notify user:', error);
+    }
+
+    // Update admin panel
+    await this.bot.editMessageText(
+      `❌ *Claim Rejected*\n\nUser @${claim.telegram_username} has been notified.`,
+      {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '← Back to Panel', callback_data: 'admin_refresh' }
+          ]]
+        }
+      }
+    );
+  }
+
 
   // Helper function to safely send messages and handle blocked users
   async safeSendMessage(chatId, text, options = {}) {

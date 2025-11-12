@@ -1,174 +1,295 @@
-import Database from 'better-sqlite3';
+import { MongoClient } from 'mongodb';
 
 class DB {
   constructor() {
-    this.db = new Database('zlink.db');
-    this.init();
+    this.client = null;
+    this.db = null;
+    this.collections = {};
   }
 
-  init() {
-    // Create tables
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tx_hash TEXT UNIQUE NOT NULL,
-        chain TEXT NOT NULL,
-        from_address TEXT NOT NULL,
-        to_address TEXT NOT NULL,
-        amount TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        processed INTEGER DEFAULT 0
-      );
+  async connect() {
+    if (this.db) return this.db;
 
-      CREATE TABLE IF NOT EXISTS magic_links (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        link_id TEXT UNIQUE NOT NULL,
-        telegram_user_id INTEGER NOT NULL,
-        telegram_username TEXT NOT NULL,
-        zec_amount TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        expires_at INTEGER NOT NULL,
-        claimed INTEGER DEFAULT 0,
-        claimed_at INTEGER,
-        tx_hash TEXT,
-        FOREIGN KEY (tx_hash) REFERENCES transactions(tx_hash)
-      );
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+      throw new Error('MONGODB_URI environment variable is not set');
+    }
 
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        telegram_user_id INTEGER UNIQUE NOT NULL,
-        telegram_username TEXT,
-        zcash_address TEXT,
-        created_at INTEGER NOT NULL,
-        total_received TEXT DEFAULT '0'
-      );
+    this.client = new MongoClient(uri);
+    await this.client.connect();
+    this.db = this.client.db();
 
-      CREATE INDEX IF NOT EXISTS idx_tx_hash ON transactions(tx_hash);
-      CREATE INDEX IF NOT EXISTS idx_link_id ON magic_links(link_id);
-      CREATE INDEX IF NOT EXISTS idx_telegram_user ON magic_links(telegram_user_id);
-    `);
+    // Initialize collections
+    this.collections = {
+      transactions: this.db.collection('transactions'),
+      magicLinks: this.db.collection('magic_links'),
+      users: this.db.collection('users'),
+      pendingClaims: this.db.collection('pending_claims'),
+      adminSessions: this.db.collection('admin_sessions'),
+      walletMappings: this.db.collection('wallet_mappings')
+    };
+
+    // Create indexes
+    await this.createIndexes();
+    
+    console.log('✅ Connected to MongoDB');
+    return this.db;
+  }
+
+  async createIndexes() {
+    await this.collections.transactions.createIndex({ tx_hash: 1 }, { unique: true });
+    await this.collections.magicLinks.createIndex({ link_id: 1 }, { unique: true });
+    await this.collections.magicLinks.createIndex({ telegram_user_id: 1 });
+    await this.collections.users.createIndex({ telegram_user_id: 1 }, { unique: true });
+    await this.collections.pendingClaims.createIndex({ claim_id: 1 }, { unique: true });
+    await this.collections.pendingClaims.createIndex({ status: 1 });
+    await this.collections.adminSessions.createIndex({ telegram_user_id: 1 }, { unique: true });
+    await this.collections.walletMappings.createIndex({ wallet_address: 1 }, { unique: true });
   }
 
   // Transaction methods
-  saveTransaction(txHash, chain, fromAddress, toAddress, amount) {
-    const stmt = this.db.prepare(`
-      INSERT OR IGNORE INTO transactions (tx_hash, chain, from_address, to_address, amount, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    return stmt.run(txHash, chain, fromAddress, toAddress, amount, Date.now());
+  async saveTransaction(txHash, chain, fromAddress, toAddress, amount) {
+    try {
+      await this.collections.transactions.insertOne({
+        tx_hash: txHash,
+        chain,
+        from_address: fromAddress,
+        to_address: toAddress,
+        amount,
+        timestamp: Date.now(),
+        processed: 0
+      });
+      return { changes: 1 };
+    } catch (error) {
+      if (error.code === 11000) return { changes: 0 }; // Duplicate key
+      throw error;
+    }
   }
 
-  markTransactionProcessed(txHash) {
-    const stmt = this.db.prepare('UPDATE transactions SET processed = 1 WHERE tx_hash = ?');
-    return stmt.run(txHash);
+  async markTransactionProcessed(txHash) {
+    const result = await this.collections.transactions.updateOne(
+      { tx_hash: txHash },
+      { $set: { processed: 1 } }
+    );
+    return { changes: result.modifiedCount };
   }
 
-  getTransaction(txHash) {
-    const stmt = this.db.prepare('SELECT * FROM transactions WHERE tx_hash = ?');
-    return stmt.get(txHash);
+  async getTransaction(txHash) {
+    return await this.collections.transactions.findOne({ tx_hash: txHash });
   }
 
   // Magic link methods
-  createMagicLink(linkId, telegramUserId, telegramUsername, zecAmount, expiresAt, txHash) {
-    const stmt = this.db.prepare(`
-      INSERT INTO magic_links (link_id, telegram_user_id, telegram_username, zec_amount, created_at, expires_at, tx_hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    return stmt.run(linkId, telegramUserId, telegramUsername, zecAmount, Date.now(), expiresAt, txHash);
+  async createMagicLink(linkId, telegramUserId, telegramUsername, zecAmount, expiresAt, txHash) {
+    await this.collections.magicLinks.insertOne({
+      link_id: linkId,
+      telegram_user_id: telegramUserId,
+      telegram_username: telegramUsername,
+      zec_amount: zecAmount,
+      created_at: Date.now(),
+      expires_at: expiresAt,
+      tx_hash: txHash,
+      claimed: 0,
+      claimed_at: null
+    });
+    return { changes: 1 };
   }
 
-  getMagicLink(linkId) {
-    const stmt = this.db.prepare('SELECT * FROM magic_links WHERE link_id = ?');
-    return stmt.get(linkId);
+  async getMagicLink(linkId) {
+    return await this.collections.magicLinks.findOne({ link_id: linkId });
   }
 
-  claimMagicLink(linkId) {
-    const stmt = this.db.prepare(`
-      UPDATE magic_links 
-      SET claimed = 1, claimed_at = ? 
-      WHERE link_id = ? AND claimed = 0 AND expires_at > ?
-    `);
-    return stmt.run(Date.now(), linkId, Date.now());
+  async claimMagicLink(linkId) {
+    const now = Date.now();
+    const result = await this.collections.magicLinks.updateOne(
+      { link_id: linkId, claimed: 0, expires_at: { $gt: now } },
+      { $set: { claimed: 1, claimed_at: now } }
+    );
+    return { changes: result.modifiedCount };
   }
 
   // User methods
-  createOrUpdateUser(telegramUserId, telegramUsername, zcashAddress = null) {
-    const stmt = this.db.prepare(`
-      INSERT INTO users (telegram_user_id, telegram_username, zcash_address, created_at)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(telegram_user_id) DO UPDATE SET
-        telegram_username = excluded.telegram_username,
-        zcash_address = COALESCE(excluded.zcash_address, zcash_address)
-    `);
-    return stmt.run(telegramUserId, telegramUsername, zcashAddress, Date.now());
+  async createOrUpdateUser(telegramUserId, telegramUsername, zcashAddress = null) {
+    const update = {
+      telegram_username: telegramUsername,
+      created_at: Date.now()
+    };
+    if (zcashAddress) {
+      update.zcash_address = zcashAddress;
+    }
+
+    await this.collections.users.updateOne(
+      { telegram_user_id: telegramUserId },
+      { 
+        $set: update,
+        $setOnInsert: { total_received: '0' }
+      },
+      { upsert: true }
+    );
+    return { changes: 1 };
   }
 
-  // Wallet mapping methods (for connecting transactions to users)
-  saveUserWallet(telegramUserId, telegramUsername, walletAddress) {
-    // First ensure user exists
-    this.createOrUpdateUser(telegramUserId, telegramUsername);
+  async saveUserWallet(telegramUserId, telegramUsername, walletAddress) {
+    await this.createOrUpdateUser(telegramUserId, telegramUsername);
     
-    // Create wallet_mappings table if it doesn't exist
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS wallet_mappings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        telegram_user_id INTEGER NOT NULL,
-        wallet_address TEXT NOT NULL,
-        chain TEXT,
-        created_at INTEGER NOT NULL,
-        UNIQUE(wallet_address),
-        FOREIGN KEY (telegram_user_id) REFERENCES users(telegram_user_id)
+    try {
+      await this.collections.walletMappings.updateOne(
+        { wallet_address: walletAddress.toLowerCase() },
+        {
+          $set: {
+            telegram_user_id: telegramUserId,
+            wallet_address: walletAddress.toLowerCase(),
+            created_at: Date.now()
+          }
+        },
+        { upsert: true }
       );
-      CREATE INDEX IF NOT EXISTS idx_wallet_address ON wallet_mappings(wallet_address);
-    `);
-    
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO wallet_mappings (telegram_user_id, wallet_address, created_at)
-      VALUES (?, ?, ?)
-    `);
-    return stmt.run(telegramUserId, walletAddress.toLowerCase(), Date.now());
+      return { changes: 1 };
+    } catch (error) {
+      if (error.code === 11000) throw new Error('Wallet already registered');
+      throw error;
+    }
   }
 
-  getUserByWallet(walletAddress) {
-    const stmt = this.db.prepare(`
-      SELECT u.* FROM users u
-      JOIN wallet_mappings w ON u.telegram_user_id = w.telegram_user_id
-      WHERE LOWER(w.wallet_address) = LOWER(?)
-    `);
-    return stmt.get(walletAddress);
+  async getUserByWallet(walletAddress) {
+    const mapping = await this.collections.walletMappings.findOne({
+      wallet_address: walletAddress.toLowerCase()
+    });
+    if (!mapping) return null;
+    return await this.collections.users.findOne({ telegram_user_id: mapping.telegram_user_id });
   }
 
-  getUserWallets(telegramUserId) {
-    const stmt = this.db.prepare(`
-      SELECT wallet_address, created_at FROM wallet_mappings
-      WHERE telegram_user_id = ?
-    `);
-    return stmt.all(telegramUserId);
+  async getUserWallets(telegramUserId) {
+    return await this.collections.walletMappings
+      .find({ telegram_user_id: telegramUserId })
+      .project({ wallet_address: 1, created_at: 1, _id: 0 })
+      .toArray();
   }
 
-  getUser(telegramUserId) {
-    const stmt = this.db.prepare('SELECT * FROM users WHERE telegram_user_id = ?');
-    return stmt.get(telegramUserId);
+  async getUser(telegramUserId) {
+    return await this.collections.users.findOne({ telegram_user_id: telegramUserId });
   }
 
-  updateUserZcashAddress(telegramUserId, zcashAddress) {
-    const stmt = this.db.prepare('UPDATE users SET zcash_address = ? WHERE telegram_user_id = ?');
-    return stmt.run(zcashAddress, telegramUserId);
+  async updateUserZcashAddress(telegramUserId, zcashAddress) {
+    const result = await this.collections.users.updateOne(
+      { telegram_user_id: telegramUserId },
+      { $set: { zcash_address: zcashAddress } }
+    );
+    return { changes: result.modifiedCount };
   }
 
-  incrementUserReceived(telegramUserId, amount) {
-    const user = this.getUser(telegramUserId);
+  async incrementUserReceived(telegramUserId, amount) {
+    const user = await this.getUser(telegramUserId);
     const currentTotal = parseFloat(user?.total_received || '0');
     const newTotal = (currentTotal + parseFloat(amount)).toString();
     
-    const stmt = this.db.prepare('UPDATE users SET total_received = ? WHERE telegram_user_id = ?');
-    return stmt.run(newTotal, telegramUserId);
+    const result = await this.collections.users.updateOne(
+      { telegram_user_id: telegramUserId },
+      { $set: { total_received: newTotal } }
+    );
+    return { changes: result.modifiedCount };
   }
 
-  close() {
-    this.db.close();
+  // Pending claims methods
+  async createPendingClaim(claimId, linkId, telegramUserId, telegramUsername, coinType, amountSent, amountUsd, zcashAmount, zcashAddress, txHash) {
+    await this.collections.pendingClaims.insertOne({
+      claim_id: claimId,
+      link_id: linkId,
+      telegram_user_id: telegramUserId,
+      telegram_username: telegramUsername,
+      coin_type: coinType,
+      amount_sent: amountSent,
+      amount_usd: amountUsd,
+      zcash_amount: zcashAmount,
+      zcash_address: zcashAddress,
+      tx_hash: txHash,
+      status: 'pending',
+      created_at: Date.now(),
+      processed_at: null,
+      admin_notes: null
+    });
+    return { changes: 1 };
+  }
+
+  async getPendingClaims() {
+    return await this.collections.pendingClaims
+      .find({ status: 'pending' })
+      .sort({ created_at: 1 })
+      .toArray();
+  }
+
+  async getPendingClaim(claimId) {
+    return await this.collections.pendingClaims.findOne({ claim_id: claimId });
+  }
+
+  async approvePendingClaim(claimId, adminNotes = '') {
+    const result = await this.collections.pendingClaims.updateOne(
+      { claim_id: claimId, status: 'pending' },
+      { 
+        $set: { 
+          status: 'approved', 
+          processed_at: Date.now(), 
+          admin_notes: adminNotes 
+        } 
+      }
+    );
+    return { changes: result.modifiedCount };
+  }
+
+  async rejectPendingClaim(claimId, adminNotes = '') {
+    const result = await this.collections.pendingClaims.updateOne(
+      { claim_id: claimId, status: 'pending' },
+      { 
+        $set: { 
+          status: 'rejected', 
+          processed_at: Date.now(), 
+          admin_notes: adminNotes 
+        } 
+      }
+    );
+    return { changes: result.modifiedCount };
+  }
+
+  // Admin session methods
+  async createAdminSession(telegramUserId, expiryHours = 24) {
+    const expiresAt = Date.now() + (expiryHours * 60 * 60 * 1000);
+    await this.collections.adminSessions.updateOne(
+      { telegram_user_id: telegramUserId },
+      {
+        $set: {
+          telegram_user_id: telegramUserId,
+          activated_at: Date.now(),
+          expires_at: expiresAt
+        }
+      },
+      { upsert: true }
+    );
+    return { changes: 1 };
+  }
+
+  async isAdminSession(telegramUserId) {
+    return await this.collections.adminSessions.findOne({
+      telegram_user_id: telegramUserId,
+      expires_at: { $gt: Date.now() }
+    });
+  }
+
+  async clearAdminSession(telegramUserId) {
+    const result = await this.collections.adminSessions.deleteOne({
+      telegram_user_id: telegramUserId
+    });
+    return { changes: result.deletedCount };
+  }
+
+  async close() {
+    if (this.client) {
+      await this.client.close();
+      console.log('✅ MongoDB connection closed');
+    }
   }
 }
 
-export default new DB();
+// Create instance
+const dbInstance = new DB();
 
+// Export connected instance
+export default dbInstance;

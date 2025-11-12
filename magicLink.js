@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { config } from './config.js';
 import db from './database.js';
 import zcashService from './zcashService.js';
+import priceService from './priceService.js';
 
 class MagicLinkService {
   generateLink(telegramUserId, telegramUsername, zecAmount, txHash) {
@@ -72,41 +73,69 @@ class MagicLinkService {
     }
 
     try {
-      // Send Zcash
-      const result = await zcashService.sendZcash(
-        zcashAddress,
-        link.zec_amount,
-        `Zlink claim by @${claimingUsername}`
-      );
-
-      if (result.success) {
-        // Mark as claimed
-        db.claimMagicLink(linkId);
-        
-        // Update user's Zcash address if they exist in system
-        try {
-          db.createOrUpdateUser(claimingUserId, claimingUsername, zcashAddress);
-          db.updateUserZcashAddress(claimingUserId, zcashAddress);
-          
-          // Increment user's total received
-          db.incrementUserReceived(claimingUserId, link.zec_amount);
-        } catch (error) {
-          console.log('Note: Could not update user stats (user may not be registered)');
-        }
-
-        return {
-          success: true,
-          amount: link.zec_amount,
-          txid: result.txid,
-          zcashAddress: zcashAddress,
-          originalRecipient: link.telegram_username,
-        };
-      } else {
+      // Get transaction details to calculate USD value
+      const transaction = db.getTransaction(link.tx_hash);
+      if (!transaction) {
         return {
           success: false,
-          error: 'Failed to send Zcash. Please try again later.',
+          error: 'Transaction data not found',
         };
       }
+
+      // Calculate USD value and Zcash amount with fee
+      const coinSymbol = priceService.getCoinFromChain(transaction.chain);
+      const amountUsd = priceService.toUSD(transaction.amount, coinSymbol);
+
+      // Check minimum
+      if (!priceService.meetsMinimum(amountUsd)) {
+        return {
+          success: false,
+          error: `Minimum transfer amount is ${priceService.formatUSD(priceService.minimumUsd)}. Your transaction is ${priceService.formatUSD(amountUsd)}.`,
+        };
+      }
+
+      // Calculate Zcash amount after 1% fee
+      const zcashAmount = priceService.calculateZcashAmount(amountUsd);
+
+      // Create pending claim for admin approval
+      const claimId = uuidv4();
+      db.createPendingClaim(
+        claimId,
+        linkId,
+        claimingUserId,
+        claimingUsername,
+        coinSymbol,
+        transaction.amount,
+        amountUsd.toFixed(2),
+        zcashAmount.toFixed(6),
+        zcashAddress,
+        transaction.tx_hash
+      );
+
+      // Mark magic link as claimed
+      db.claimMagicLink(linkId);
+
+      // Update user's Zcash address
+      try {
+        db.createOrUpdateUser(claimingUserId, claimingUsername, zcashAddress);
+        db.updateUserZcashAddress(claimingUserId, zcashAddress);
+      } catch (error) {
+        console.log('Note: Could not update user info');
+      }
+
+      console.log(`📋 Created pending claim ${claimId} for @${claimingUsername}`);
+      console.log(`   Amount: ${transaction.amount} ${coinSymbol} ($${amountUsd.toFixed(2)} USD)`);
+      console.log(`   ZEC to send: ${zcashAmount.toFixed(6)} ZEC (after 1% fee)`);
+
+      // Return success with "processing" status for user
+      return {
+        success: true,
+        processing: true,
+        amount: zcashAmount.toFixed(6),
+        zcashAddress: zcashAddress,
+        originalRecipient: link.telegram_username,
+        estimatedTime: '5-7 minutes',
+      };
     } catch (error) {
       console.error('Error claiming link:', error);
       return {

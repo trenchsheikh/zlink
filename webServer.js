@@ -84,6 +84,19 @@ class WebServer {
     this.server.listen(this.port, () => {
       console.log(`🌐 Web server running at http://localhost:${this.port}`);
     });
+
+    // Handle server errors
+    this.server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${this.port} is already in use!`);
+        console.log(`💡 To fix this:`);
+        console.log(`   1. Stop other Node processes: Get-Process node | Stop-Process -Force`);
+        console.log(`   2. Or change the port in webServer.js`);
+        console.log(`\n⚠️  Web server not started, but bot will continue running...`);
+      } else {
+        console.error('Web server error:', error);
+      }
+    });
   }
 
   getHomePage() {
@@ -367,7 +380,14 @@ class WebServer {
                 
                 if (result.success) {
                     message.className = 'message success';
-                    message.innerHTML = '✅ Success! ' + result.amount + ' ZEC sent to your address.<br>Transaction ID: ' + result.txid;
+                    if (result.processing) {
+                        message.innerHTML = '✅ Claim submitted successfully!<br><br>' + 
+                                          '💰 Amount: ' + result.amount + ' ZEC<br>' +
+                                          '⏳ Processing time: ' + result.estimatedTime + '<br><br>' +
+                                          'Your transaction is being processed. Please wait 5-7 minutes for the Zcash to arrive in your wallet.';
+                    } else {
+                        message.innerHTML = '✅ Success! ' + result.amount + ' ZEC sent to your address.<br>Transaction ID: ' + result.txid;
+                    }
                 } else {
                     message.className = 'message error';
                     message.textContent = '❌ ' + result.error;
