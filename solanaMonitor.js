@@ -61,6 +61,7 @@ class SolanaMonitor {
     await this.scanRecentTransactions(10);
 
     // Subscribe to account changes (WebSocket - doesn't count toward rate limit)
+    // Note: Some RPC endpoints don't support WebSocket subscriptions
     try {
       this.subscriptionId = this.connection.onAccountChange(
         this.watchAddress,
@@ -72,15 +73,27 @@ class SolanaMonitor {
       );
       console.log('✅ WebSocket subscription active for Solana monitoring');
     } catch (error) {
-      console.log('⚠️  WebSocket subscription failed, will rely on polling only');
-      console.log(`   Error: ${error.message || error}`);
+      const errorMsg = error.message || String(error);
+      const errorCode = error.code || (error.error?.code);
       
-      // If it's a rate limit error, wait before retrying
-      if (error.message && (error.message.includes('429') || error.message.includes('rate limit'))) {
-        console.log('   Rate limit detected. Will retry WebSocket connection in 60 seconds...');
+      // Check if RPC doesn't support WebSocket subscriptions
+      if (errorCode === -32601 || 
+          errorMsg.includes('accountSubscribe') || 
+          errorMsg.includes('Method not found') ||
+          errorMsg.includes('not found')) {
+        console.log('⚠️  RPC endpoint does not support WebSocket subscriptions');
+        console.log('   This is normal for HTTP-only RPC endpoints');
+        console.log('   Will use polling only (checks every 30 seconds)');
+        this.subscriptionId = null; // Ensure it's null so we don't try to remove it
+      } else if (errorMsg.includes('429') || errorMsg.includes('rate limit')) {
+        console.log('⚠️  WebSocket subscription failed due to rate limit');
+        console.log('   Will retry in 60 seconds, polling will continue in the meantime');
         setTimeout(() => {
           this.retryWebSocketSubscription();
         }, 60000);
+      } else {
+        console.log('⚠️  WebSocket subscription failed, will rely on polling only');
+        console.log(`   Error: ${errorMsg}`);
       }
     }
     
@@ -115,8 +128,19 @@ class SolanaMonitor {
       );
       console.log('✅ WebSocket subscription re-established');
     } catch (error) {
-      console.log(`⚠️  WebSocket retry failed: ${error.message || error}`);
-      // Retry again in 2 minutes if it failed
+      const errorMsg = error.message || String(error);
+      const errorCode = error.code || (error.error?.code);
+      
+      // If RPC doesn't support subscriptions, don't retry
+      if (errorCode === -32601 || 
+          errorMsg.includes('accountSubscribe') || 
+          errorMsg.includes('Method not found')) {
+        console.log('   RPC does not support WebSocket subscriptions. Using polling only.');
+        return; // Don't retry if method is not supported
+      }
+      
+      console.log(`⚠️  WebSocket retry failed: ${errorMsg}`);
+      // Retry again in 2 minutes if it's a different error
       setTimeout(() => {
         this.retryWebSocketSubscription();
       }, 120000);
@@ -271,8 +295,13 @@ class SolanaMonitor {
   stop() {
     if (!this.enabled) return;
     
-    if (this.subscriptionId !== null) {
-      this.connection.removeAccountChangeListener(this.subscriptionId);
+    if (this.subscriptionId !== null && this.connection) {
+      try {
+        this.connection.removeAccountChangeListener(this.subscriptionId);
+      } catch (error) {
+        // Ignore errors when removing listener (e.g., if subscription was never established)
+        console.log('   Note: WebSocket subscription was not active');
+      }
     }
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
