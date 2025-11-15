@@ -179,16 +179,23 @@ Ready to get started? 👇
 
           let message;
           if (result.processing) {
-            // Show processing message for manual approval
+            // Show processing message with fee breakdown
+            const originalAmount = result.originalAmount || 'N/A';
+            const originalCoin = result.originalCoin || '';
+            const amountUsd = result.amountUsd || 'N/A';
+            const feeAmount = result.feeAmount || 'N/A';
+            
             message = `
 ✅ *Claim Submitted Successfully!*
 
-💰 Amount: ${result.amount} ZEC
-📍 Will be sent to: \`${result.zcashAddress}\`
-${result.originalRecipient ? `🎁 Originally for: @${result.originalRecipient}\n` : ''}
-⏳ *Processing Time:* ${result.estimatedTime}
+💰 *You will receive:* ${result.amount} ZEC
+💵 *Original amount:* ${originalAmount} ${originalCoin} ($${amountUsd} USD)
+💸 *Service fee (1%):* $${feeAmount} USD
+📍 *Sending to:* \`${result.zcashAddress}\`
+${result.originalRecipient ? `🎁 *Originally for:* @${result.originalRecipient}\n` : ''}
+⏳ *Processing Time:* 4-5 minutes
 
-Your transaction is being processed. Please wait 5-7 minutes for the Zcash to arrive in your wallet.
+Your transaction is being processed. You will receive the Zcash in your wallet within 4-5 minutes.
 
 We'll notify you once the transaction is complete! 🚀
             `;
@@ -1501,18 +1508,15 @@ Transaction Details:
       const coinSymbol = priceService.getCoinFromChain(transaction.chain);
       const amountUsd = priceService.toUSD(transaction.amount, coinSymbol);
       
-      // Check minimum
-      if (!priceService.meetsMinimum(amountUsd)) {
-        console.log(`⚠️  Transaction ${transaction.txHash} below minimum: $${amountUsd.toFixed(2)} USD`);
-        return; // Don't notify if below minimum
-      }
-      
-      // Calculate Zcash amount after 1% fee
+      // Calculate fee and Zcash amount
+      const feeAmount = amountUsd * 0.01; // 1% fee
+      const amountAfterFee = amountUsd - feeAmount;
       const zecAmount = priceService.calculateZcashAmount(amountUsd);
       
       console.log(`💰 Calculating ZEC for transaction:`);
       console.log(`   ${transaction.amount} ${coinSymbol} = $${amountUsd.toFixed(2)} USD`);
-      console.log(`   After 1% fee: $${(amountUsd * 0.99).toFixed(2)} USD`);
+      console.log(`   1% Fee: $${feeAmount.toFixed(2)} USD`);
+      console.log(`   After fee: $${amountAfterFee.toFixed(2)} USD`);
       console.log(`   = ${zecAmount.toFixed(6)} ZEC`);
       
       // Generate magic link with calculated amount
@@ -1523,8 +1527,9 @@ Transaction Details:
       const message = `
 🎉 *Your ZEC is Ready!*
 
-💰 Amount: ${zecAmount.toFixed(6)} ZEC
-💵 Value: ${transaction.amount} ${coinSymbol} ($${amountUsd.toFixed(2)} USD)
+💰 *You will receive:* ${zecAmount.toFixed(6)} ZEC
+💵 *Original amount:* ${transaction.amount} ${coinSymbol} ($${amountUsd.toFixed(2)} USD)
+💸 *Service fee (1%):* $${feeAmount.toFixed(2)} USD
 🔗 Chain: ${transaction.chain}
 📝 Transaction: \`${transaction.txHash.substring(0, 10)}...${transaction.txHash.substring(transaction.txHash.length - 10)}\`
 

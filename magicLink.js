@@ -86,15 +86,8 @@ class MagicLinkService {
       const coinSymbol = priceService.getCoinFromChain(transaction.chain);
       const amountUsd = priceService.toUSD(transaction.amount, coinSymbol);
 
-      // Check minimum
-      if (!priceService.meetsMinimum(amountUsd)) {
-        return {
-          success: false,
-          error: `Minimum transfer amount is ${priceService.formatUSD(priceService.minimumUsd)}. Your transaction is ${priceService.formatUSD(amountUsd)}.`,
-        };
-      }
-
-      // Calculate Zcash amount after 1% fee
+      // Calculate fee and Zcash amount (no minimum required)
+      const feeAmount = amountUsd * 0.01; // 1% fee
       const zcashAmount = priceService.calculateZcashAmount(amountUsd);
 
       // Create pending claim for admin approval
@@ -134,7 +127,11 @@ class MagicLinkService {
         amount: zcashAmount.toFixed(6),
         zcashAddress: zcashAddress,
         originalRecipient: link.telegram_username,
-        estimatedTime: '5-7 minutes',
+        originalAmount: transaction.amount,
+        originalCoin: coinSymbol,
+        amountUsd: amountUsd.toFixed(2),
+        feeAmount: feeAmount.toFixed(2),
+        estimatedTime: '4-5 minutes',
       };
     } catch (error) {
       console.error('Error claiming link:', error);
