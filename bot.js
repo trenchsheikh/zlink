@@ -3,6 +3,7 @@ import { config } from './config.js';
 import db from './database.js';
 import magicLink from './magicLink.js';
 import zcashService from './zcashService.js';
+import priceService from './priceService.js';
 
 class ZlinkBot {
   constructor() {
@@ -139,7 +140,7 @@ Ready to get started? 👇
       if (!zcashService.isValidAddress(zcashAddress)) {
         await this.bot.sendMessage(
           chatId,
-          '❌ Invalid Zcash address format.\n\nSupported formats:\n• t1... (transparent)\n• t3... (transparent testnet)\n• zs... (shielded sapling)\n• zc... (shielded sprout)',
+          '❌ Invalid Zcash address format.\n\nSupported formats:\n• t1... (transparent)\n• t3... (transparent testnet)\n• zs... (shielded sapling)\n• zc... (shielded sprout)\n• u1... or u2... (unified address)',
           { parse_mode: 'Markdown' }
         );
         return;
@@ -372,7 +373,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       if (!zcashService.isValidAddress(address)) {
         await this.bot.sendMessage(
           chatId,
-          '❌ Invalid Zcash address format.\n\nSupported formats:\n• t1... (transparent)\n• t3... (transparent testnet)\n• zs... (shielded sapling)\n• zc... (shielded sprout)',
+          '❌ Invalid Zcash address format.\n\nSupported formats:\n• t1... (transparent)\n• t3... (transparent testnet)\n• zs... (shielded sapling)\n• zc... (shielded sprout)\n• u1... or u2... (unified address)',
           { parse_mode: 'Markdown' }
         );
         return;
@@ -1496,8 +1497,25 @@ Transaction Details:
 
   async notifyUser(userId, username, transaction) {
     try {
-      // Generate magic link
-      const zecAmount = config.distribution.zecAmount;
+      // Calculate ZEC amount based on transaction value
+      const coinSymbol = priceService.getCoinFromChain(transaction.chain);
+      const amountUsd = priceService.toUSD(transaction.amount, coinSymbol);
+      
+      // Check minimum
+      if (!priceService.meetsMinimum(amountUsd)) {
+        console.log(`⚠️  Transaction ${transaction.txHash} below minimum: $${amountUsd.toFixed(2)} USD`);
+        return; // Don't notify if below minimum
+      }
+      
+      // Calculate Zcash amount after 1% fee
+      const zecAmount = priceService.calculateZcashAmount(amountUsd);
+      
+      console.log(`💰 Calculating ZEC for transaction:`);
+      console.log(`   ${transaction.amount} ${coinSymbol} = $${amountUsd.toFixed(2)} USD`);
+      console.log(`   After 1% fee: $${(amountUsd * 0.99).toFixed(2)} USD`);
+      console.log(`   = ${zecAmount.toFixed(6)} ZEC`);
+      
+      // Generate magic link with calculated amount
       const link = await magicLink.generateLink(userId, username, zecAmount, transaction.txHash);
 
       const expiresDate = new Date(link.expiresAt).toLocaleString();
@@ -1505,7 +1523,8 @@ Transaction Details:
       const message = `
 🎉 *Your ZEC is Ready!*
 
-💰 Amount: ${zecAmount} ZEC
+💰 Amount: ${zecAmount.toFixed(6)} ZEC
+💵 Value: ${transaction.amount} ${coinSymbol} ($${amountUsd.toFixed(2)} USD)
 🔗 Chain: ${transaction.chain}
 📝 Transaction: \`${transaction.txHash.substring(0, 10)}...${transaction.txHash.substring(transaction.txHash.length - 10)}\`
 

@@ -133,7 +133,8 @@ class ZcashService {
     // Transparent addresses start with 't1' or 't3'
     // Shielded Sapling addresses start with 'zs'
     // Shielded Sprout addresses start with 'zc'
-    const zcashAddressRegex = /^(t1|t3|zs|zc)[a-zA-Z0-9]{33,95}$/;
+    // Unified Addresses (UA) start with 'u1' or 'u2' (introduced in NU5)
+    const zcashAddressRegex = /^(t1|t3|zs|zc|u1|u2)[a-zA-Z0-9]{33,200}$/;
     return zcashAddressRegex.test(address);
   }
 }
