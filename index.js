@@ -156,6 +156,19 @@ const app = new ZlinkApp();
 process.on('SIGINT', () => app.stop());
 process.on('SIGTERM', () => app.stop());
 
+// Handle unhandled WebSocket errors (like 429 rate limits)
+process.on('unhandledRejection', (reason, promise) => {
+  if (reason && typeof reason === 'object') {
+    const errorMsg = reason.message || String(reason);
+    if (errorMsg.includes('429') || errorMsg.includes('ws error') || errorMsg.includes('Unexpected server response: 429')) {
+      console.log('⚠️  Solana WebSocket rate limit (429) detected. Polling will continue as fallback.');
+      return; // Don't crash, just log
+    }
+  }
+  // For other unhandled rejections, log but don't crash
+  console.error('Unhandled rejection:', reason);
+});
+
 // Start the application
 app.start().catch(error => {
   console.error('Fatal error:', error);

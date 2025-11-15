@@ -51,6 +51,8 @@ class SolanaMonitor {
     }
 
     console.log(`Starting Solana monitor for address: ${this.watchAddress.toBase58()}`);
+    console.log(`   RPC: ${config.solana.rpcUrl}`);
+    console.log(`   Note: Free RPCs may have rate limits. 429 errors are handled gracefully.`);
 
     // Add delay before first request to avoid rate limits on startup
     await this.sleep(2000);
@@ -68,9 +70,23 @@ class SolanaMonitor {
         },
         'confirmed'
       );
+      console.log('✅ WebSocket subscription active for Solana monitoring');
     } catch (error) {
       console.log('⚠️  WebSocket subscription failed, will rely on polling only');
+      console.log(`   Error: ${error.message || error}`);
+      
+      // If it's a rate limit error, wait before retrying
+      if (error.message && (error.message.includes('429') || error.message.includes('rate limit'))) {
+        console.log('   Rate limit detected. Will retry WebSocket connection in 60 seconds...');
+        setTimeout(() => {
+          this.retryWebSocketSubscription();
+        }, 60000);
+      }
     }
+    
+    // Note: WebSocket errors (like 429) may occur at a lower level
+    // The polling fallback will ensure transactions are still detected
+    // If you see frequent 429 errors, consider using a paid RPC endpoint
 
     // Poll periodically as backup (increased interval to avoid rate limits)
     this.pollInterval = setInterval(async () => {
@@ -80,6 +96,31 @@ class SolanaMonitor {
 
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async retryWebSocketSubscription() {
+    if (!this.enabled || this.subscriptionId !== null) {
+      return; // Already subscribed or disabled
+    }
+
+    try {
+      console.log('🔄 Retrying Solana WebSocket subscription...');
+      this.subscriptionId = this.connection.onAccountChange(
+        this.watchAddress,
+        async (accountInfo, context) => {
+          console.log('Account changed, checking for new transactions...');
+          await this.checkNewTransactions();
+        },
+        'confirmed'
+      );
+      console.log('✅ WebSocket subscription re-established');
+    } catch (error) {
+      console.log(`⚠️  WebSocket retry failed: ${error.message || error}`);
+      // Retry again in 2 minutes if it failed
+      setTimeout(() => {
+        this.retryWebSocketSubscription();
+      }, 120000);
+    }
   }
 
   async scanRecentTransactions(limit = 10) {
