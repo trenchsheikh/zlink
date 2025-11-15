@@ -1164,18 +1164,13 @@ Need support? Contact the bot administrator.
     const message = `
 🎁 *How to Claim ZEC*
 
-You have two options to claim your Zcash:
-
-*Option 1: Via Telegram Bot* (Recommended)
+*Claim via Telegram Bot:*
 Use the \`/claim\` command:
 
 \`/claim <code> <your_zcash_address>\`
 
 *Example:*
 \`/claim abc123-def456-789 t1YourZcashAddress\`
-
-*Option 2: Via Web Browser*
-Click the "🌐 Claim via Web" button
 
 *Sharing Magic Links:*
 ✨ Magic links are transferable! You can:
@@ -1518,9 +1513,10 @@ Transaction Details:
 
 🔑 *Code:* \`${link.linkId}\`
 
-*Option 1:* Click button below
-*Option 2:* Use command in chat:
+*To claim, use this command:*
 \`/claim ${link.linkId} t1YourZcashAddress\`
+
+Replace \`t1YourZcashAddress\` with your actual Zcash receiving address.
 
 ⏰ Expires: ${expiresDate}
 
@@ -1529,7 +1525,6 @@ Transaction Details:
 
       const keyboard = {
         inline_keyboard: [
-          [{ text: '🌐 Claim via Web', url: link.url }],
           [{ text: '⚙️ Set ZEC Address', callback_data: 'menu_setaddress' }],
           [{ text: '❓ How to Claim', callback_data: 'menu_howto_claim' }],
         ],

@@ -26,7 +26,6 @@ No KYC, no complicated exchanges, just instant ZEC delivery.
 ### 🎁 **Instant Magic Links**
 - Receive ZEC via shareable magic links
 - Claim directly in Telegram with `/claim` command
-- Or use web interface for claiming
 
 ### 🔗 **Multi-Chain Support**
 - 🔷 Base Network (L2 Ethereum)
@@ -52,7 +51,6 @@ No KYC, no complicated exchanges, just instant ZEC delivery.
 ### 🎨 **Beautiful Interface**
 - Interactive button menus
 - Clean Telegram bot UI
-- Modern web claim page
 
 ---
 
@@ -165,8 +163,7 @@ Bot sends you a message with:
 
 **Step 7: Claim Your ZEC**
 ```
-Option 1 (Telegram): /claim abc123-def456 t1YourAddress
-Option 2 (Web): Click the claim button
+/claim abc123-def456 t1YourAddress
 ```
 
 **Done!** 🎉 Zcash arrives in your wallet!
@@ -190,15 +187,12 @@ Option 2 (Web): Click the claim button
 
 ## 🎁 Magic Link Claiming
 
-### Two Ways to Claim
+### How to Claim
 
-**Via Telegram (Recommended):**
+**Via Telegram:**
 ```bash
 /claim abc123-def456-789xyz t1YourZcashAddress
 ```
-
-**Via Web Browser:**
-Click the "🌐 Claim via Web" button in the notification.
 
 ### Sharing Links
 
@@ -456,7 +450,7 @@ zlink/
 ├── zcashService.js       # Zcash sending
 ├── magicLink.js          # Magic link logic
 ├── database.js           # SQLite database
-├── webServer.js          # HTTP server for claims
+├── webServer.js          # HTTP server (view-only, claims via Telegram only)
 ├── config.js             # Configuration loader
 ├── package.json          # Dependencies
 ├── .env                  # Environment variables (create this)
@@ -476,28 +470,10 @@ zlink/
 ### Magic Link Web API
 
 **GET /claim/:linkId**  
-Returns HTML claim page
+Returns HTML claim page (view-only). Claims must be made via Telegram using the `/claim` command.
 
 **POST /claim/:linkId**  
-Claims the ZEC
-```json
-{
-  "userId": 123456789,
-  "username": "johndoe",
-  "zcashAddress": "t1abc123..."
-}
-```
-
-Response:
-```json
-{
-  "success": true,
-  "amount": "0.01",
-  "txid": "abc123...",
-  "zcashAddress": "t1abc123...",
-  "originalRecipient": "alice"
-}
-```
+❌ Disabled - Returns 403 error. All claims must be made via Telegram.
 
 ---
 
