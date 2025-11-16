@@ -556,7 +556,32 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       // Check if user is in admin session
       const isAdmin = await db.isAdminSession(userId);
       if (isAdmin) {
-        // Any message in admin mode keeps showing admin interface
+        // Check if admin is in input state (waiting for input)
+        const inputState = await db.getAdminInputState(userId);
+        if (inputState && inputState.state) {
+          // Handle admin input based on state
+          if (inputState.state.startsWith('approve_')) {
+            const claimId = inputState.state.replace('approve_', '');
+            const stateData = JSON.parse(inputState.data || '{}');
+            const storedMessageId = stateData.messageId;
+            await this.handleAdminApproveConfirm(chatId, userId, claimId, text, storedMessageId);
+            return;
+          } else if (inputState.state.startsWith('reject_reason_')) {
+            const claimId = inputState.state.replace('reject_reason_', '');
+            const stateData = JSON.parse(inputState.data || '{}');
+            const storedMessageId = stateData.messageId;
+            await this.handleAdminRejectReason(chatId, userId, claimId, text, storedMessageId);
+            return;
+          } else if (inputState.state.startsWith('reject_refund_')) {
+            const claimId = inputState.state.replace('reject_refund_', '');
+            const stateData = JSON.parse(inputState.data || '{}');
+            const storedMessageId = stateData.messageId;
+            const rejectionReason = stateData.rejectionReason;
+            await this.handleAdminRejectConfirm(chatId, userId, claimId, rejectionReason, text, storedMessageId);
+            return;
+          }
+        }
+        // Any other message in admin mode keeps showing admin interface
         // (This allows admins to refresh the view)
         return;
       }
@@ -683,6 +708,8 @@ Your Zcash has been sent! Check your wallet in a few minutes.
 
       if (data.startsWith('admin_view_')) {
         const claimId = data.replace('admin_view_', '');
+        // Clear any input state when viewing claim details (cancel action)
+        await db.clearAdminInputState(userId);
         await this.showClaimDetails(chatId, claimId, messageId);
         return;
       }
@@ -1547,8 +1574,51 @@ Approve to send ZEC or reject this claim.
       return;
     }
 
-    // Update status
-    await db.approvePendingClaim(claimId, `Approved by admin ${userId}`);
+    // Store admin state to track that we're waiting for Zcash TXID
+    await db.setAdminInputState(userId, `approve_${claimId}`, JSON.stringify({ messageId }));
+
+    // Prompt for Zcash transaction ID
+    await this.bot.editMessageText(
+      `✅ *Approve Claim*\n\n*Claim ID:* ${claimId}\n*User:* @${claim.telegram_username}\n*Amount:* ${claim.zcash_amount} ZEC\n*Address:* \`${claim.zcash_address}\`\n\n*Please enter the Zcash transaction ID (TXID):*\n\nSend the transaction hash from the Zcash blockchain.`,
+      {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '❌ Cancel', callback_data: `admin_view_${claimId}` }
+          ]]
+        }
+      }
+    );
+  }
+
+  async handleAdminApproveConfirm(chatId, userId, claimId, zcashTxid, messageId) {
+    const claim = await db.getPendingClaim(claimId);
+    
+    if (!claim) {
+      await this.bot.sendMessage(chatId, '❌ Claim not found');
+      return;
+    }
+
+    // Validate Zcash TXID format (basic check)
+    if (!zcashTxid || zcashTxid.length < 10) {
+      await this.bot.sendMessage(chatId, '❌ Invalid Zcash transaction ID. Please try again.');
+      // Re-prompt for TXID
+      const inputState = await db.getAdminInputState(userId);
+      if (inputState && inputState.state.startsWith('approve_')) {
+        // Keep the state, just show error
+        return;
+      }
+      await this.handleAdminApprove(chatId, userId, claimId, messageId);
+      return;
+    }
+
+    // Update status with Zcash TXID
+    await db.approvePendingClaim(claimId, zcashTxid, `Approved by admin ${userId}`);
+
+    // Clear admin input state
+    await db.clearAdminInputState(userId);
 
     // Notify the user
     try {
@@ -1559,6 +1629,7 @@ Your Zcash has been sent! 🎉
 
 💰 Amount: ${claim.zcash_amount} ZEC
 📍 Address: \`${claim.zcash_address}\`
+🔗 Transaction ID: \`${zcashTxid}\`
 
 Please allow a few minutes for the transaction to appear in your wallet.
 
@@ -1570,25 +1641,49 @@ Thank you for using Zlink! 🚀
       });
       
       console.log(`✅ Claim ${claimId} approved by admin ${userId}`);
+      console.log(`   Zcash TXID: ${zcashTxid}`);
       console.log(`   User @${claim.telegram_username} notified`);
     } catch (error) {
       console.error('Could not notify user:', error);
     }
 
     // Update admin panel
-    await this.bot.editMessageText(
-      `✅ *Claim Approved*\n\nUser @${claim.telegram_username} has been notified.\nZEC Amount: ${claim.zcash_amount}`,
-      {
-        chat_id: chatId,
-        message_id: messageId,
+    if (messageId) {
+      try {
+        await this.bot.editMessageText(
+          `✅ *Claim Approved*\n\n*User:* @${claim.telegram_username}\n*ZEC Amount:* ${claim.zcash_amount}\n*Zcash TXID:* \`${zcashTxid}\`\n\nUser has been notified.`,
+          {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '← Back to Panel', callback_data: 'admin_refresh' }
+              ]]
+            }
+          }
+        );
+      } catch (error) {
+        // If edit fails, send new message
+        await this.bot.sendMessage(chatId, `✅ *Claim Approved*\n\n*User:* @${claim.telegram_username}\n*ZEC Amount:* ${claim.zcash_amount}\n*Zcash TXID:* \`${zcashTxid}\`\n\nUser has been notified.`, {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '← Back to Panel', callback_data: 'admin_refresh' }
+            ]]
+          }
+        });
+      }
+    } else {
+      await this.bot.sendMessage(chatId, `✅ *Claim Approved*\n\n*User:* @${claim.telegram_username}\n*ZEC Amount:* ${claim.zcash_amount}\n*Zcash TXID:* \`${zcashTxid}\`\n\nUser has been notified.`, {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
             { text: '← Back to Panel', callback_data: 'admin_refresh' }
           ]]
         }
-      }
-    );
+      });
+    }
   }
 
   async handleAdminReject(chatId, userId, claimId, messageId) {
@@ -1602,21 +1697,92 @@ Thank you for using Zlink! 🚀
       return;
     }
 
-    // Update status
-    await db.rejectPendingClaim(claimId, `Rejected by admin ${userId}`);
+    // Store admin state to track that we're waiting for rejection reason
+    await db.setAdminInputState(userId, `reject_reason_${claimId}`, JSON.stringify({ messageId }));
+
+    // Prompt for rejection reason
+    await this.bot.editMessageText(
+      `❌ *Reject Claim*\n\n*Claim ID:* ${claimId}\n*User:* @${claim.telegram_username}\n*Amount:* ${claim.zcash_amount} ZEC\n\n*Please enter the rejection reason:*\n\nExplain why this claim is being rejected.`,
+      {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '❌ Cancel', callback_data: `admin_view_${claimId}` }
+          ]]
+        }
+      }
+    );
+  }
+
+  async handleAdminRejectReason(chatId, userId, claimId, rejectionReason, messageId) {
+    const claim = await db.getPendingClaim(claimId);
+    
+    if (!claim) {
+      await this.bot.sendMessage(chatId, '❌ Claim not found');
+      return;
+    }
+
+    if (!rejectionReason || rejectionReason.trim().length < 3) {
+      await this.bot.sendMessage(chatId, '❌ Please provide a valid rejection reason (at least 3 characters).');
+      await this.handleAdminReject(chatId, userId, claimId, messageId);
+      return;
+    }
+
+    // Store rejection reason and prompt for refund TX hash
+    await db.setAdminInputState(userId, `reject_refund_${claimId}`, JSON.stringify({ messageId: messageId, rejectionReason }));
+
+    await this.bot.editMessageText(
+      `❌ *Reject Claim - Refund Transaction*\n\n*Claim ID:* ${claimId}\n*Rejection Reason:* ${rejectionReason}\n\n*Please enter the refund transaction hash:*\n\nEnter the transaction hash from the refund you sent. If no refund was sent, type "none" or "N/A".`,
+      {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '❌ Cancel', callback_data: `admin_view_${claimId}` }
+          ]]
+        }
+      }
+    );
+  }
+
+  async handleAdminRejectConfirm(chatId, userId, claimId, rejectionReason, refundTxHash, messageId) {
+    const claim = await db.getPendingClaim(claimId);
+    
+    if (!claim) {
+      await this.bot.sendMessage(chatId, '❌ Claim not found');
+      return;
+    }
+
+    // Normalize refund TX hash (allow "none", "N/A", or empty)
+    const normalizedRefundHash = (refundTxHash && 
+      refundTxHash.toLowerCase() !== 'none' && 
+      refundTxHash.toLowerCase() !== 'n/a' && 
+      refundTxHash.trim().length > 0) ? refundTxHash.trim() : null;
+
+    // Update status with rejection reason and refund TX hash
+    await db.rejectPendingClaim(claimId, rejectionReason, normalizedRefundHash, `Rejected by admin ${userId}`);
+
+    // Clear admin input state
+    await db.clearAdminInputState(userId);
 
     // Notify the user
     try {
       const userMessage = `
 ❌ *Transaction Update*
 
-We're sorry, but we were unable to process your claim at this time.
+We're sorry, but your claim has been rejected.
 
-If you believe this is an error, please contact support.
+*Reason:* ${rejectionReason}
+${normalizedRefundHash ? `*Refund TX:* \`${normalizedRefundHash}\`` : '*Refund:* No refund transaction provided'}
 
 Transaction Details:
 • Amount: ${claim.amount_sent} ${claim.coin_type}
 • USD Value: $${claim.amount_usd}
+
+If you believe this is an error, please contact support.
       `;
 
       await this.bot.sendMessage(claim.telegram_user_id, userMessage, {
@@ -1624,25 +1790,50 @@ Transaction Details:
       });
       
       console.log(`❌ Claim ${claimId} rejected by admin ${userId}`);
+      console.log(`   Reason: ${rejectionReason}`);
+      console.log(`   Refund TX: ${normalizedRefundHash || 'None'}`);
       console.log(`   User @${claim.telegram_username} notified`);
     } catch (error) {
       console.error('Could not notify user:', error);
     }
 
     // Update admin panel
-    await this.bot.editMessageText(
-      `❌ *Claim Rejected*\n\nUser @${claim.telegram_username} has been notified.`,
-      {
-        chat_id: chatId,
-        message_id: messageId,
+    if (messageId) {
+      try {
+        await this.bot.editMessageText(
+          `❌ *Claim Rejected*\n\n*User:* @${claim.telegram_username}\n*Reason:* ${rejectionReason}\n${normalizedRefundHash ? `*Refund TX:* \`${normalizedRefundHash}\`` : '*Refund:* None'}\n\nUser has been notified.`,
+          {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '← Back to Panel', callback_data: 'admin_refresh' }
+              ]]
+            }
+          }
+        );
+      } catch (error) {
+        // If edit fails, send new message
+        await this.bot.sendMessage(chatId, `❌ *Claim Rejected*\n\n*User:* @${claim.telegram_username}\n*Reason:* ${rejectionReason}\n${normalizedRefundHash ? `*Refund TX:* \`${normalizedRefundHash}\`` : '*Refund:* None'}\n\nUser has been notified.`, {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '← Back to Panel', callback_data: 'admin_refresh' }
+            ]]
+          }
+        });
+      }
+    } else {
+      await this.bot.sendMessage(chatId, `❌ *Claim Rejected*\n\n*User:* @${claim.telegram_username}\n*Reason:* ${rejectionReason}\n${normalizedRefundHash ? `*Refund TX:* \`${normalizedRefundHash}\`` : '*Refund:* None'}\n\nUser has been notified.`, {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
             { text: '← Back to Panel', callback_data: 'admin_refresh' }
           ]]
         }
-      }
-    );
+      });
+    }
   }
 
 

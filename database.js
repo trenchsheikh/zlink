@@ -221,13 +221,14 @@ class DB {
     return await this.collections.pendingClaims.findOne({ claim_id: claimId });
   }
 
-  async approvePendingClaim(claimId, adminNotes = '') {
+  async approvePendingClaim(claimId, zcashTxid, adminNotes = '') {
     const result = await this.collections.pendingClaims.updateOne(
       { claim_id: claimId, status: 'pending' },
       { 
         $set: { 
           status: 'approved', 
           processed_at: Date.now(), 
+          zcash_txid: zcashTxid,
           admin_notes: adminNotes 
         } 
       }
@@ -235,13 +236,15 @@ class DB {
     return { changes: result.modifiedCount };
   }
 
-  async rejectPendingClaim(claimId, adminNotes = '') {
+  async rejectPendingClaim(claimId, rejectionReason, refundTxHash = null, adminNotes = '') {
     const result = await this.collections.pendingClaims.updateOne(
       { claim_id: claimId, status: 'pending' },
       { 
         $set: { 
           status: 'rejected', 
           processed_at: Date.now(), 
+          rejection_reason: rejectionReason,
+          refund_tx_hash: refundTxHash,
           admin_notes: adminNotes 
         } 
       }
@@ -278,6 +281,44 @@ class DB {
       telegram_user_id: telegramUserId
     });
     return { changes: result.deletedCount };
+  }
+
+  // Admin input state methods (for multi-step admin actions)
+  async setAdminInputState(telegramUserId, state, data = null) {
+    await this.collections.adminSessions.updateOne(
+      { telegram_user_id: telegramUserId },
+      {
+        $set: {
+          input_state: state,
+          input_data: data,
+          input_state_updated: Date.now()
+        }
+      },
+      { upsert: false }
+    );
+  }
+
+  async getAdminInputState(telegramUserId) {
+    const session = await this.collections.adminSessions.findOne({
+      telegram_user_id: telegramUserId
+    });
+    return session ? {
+      state: session.input_state,
+      data: session.input_data
+    } : null;
+  }
+
+  async clearAdminInputState(telegramUserId) {
+    await this.collections.adminSessions.updateOne(
+      { telegram_user_id: telegramUserId },
+      {
+        $unset: {
+          input_state: '',
+          input_data: '',
+          input_state_updated: ''
+        }
+      }
+    );
   }
 
   async close() {
