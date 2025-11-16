@@ -21,6 +21,11 @@ export const config = {
     rpcUrl: process.env.SOLANA_RPC_URL,
     walletAddress: process.env.SOL_WALLET_ADDRESS,
   },
+  bitcoin: {
+    taprootAddress: process.env.BTC_TAPROOT_ADDRESS || 'bc1p67mtqap6a90lh36pzhmsh7hfqs5a39ukkg6t290hmwmguj4we23qanze60',
+    nativeSegwitAddress: process.env.BTC_NATIVE_SEGWIT_ADDRESS || 'bc1qhcczumulw86pre856lk34vwdyan8z8lre0uhw2',
+    name: 'Bitcoin',
+  },
   zcash: {
     rpcUrl: process.env.ZCASH_RPC_URL,
     rpcUser: process.env.ZCASH_RPC_USER,

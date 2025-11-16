@@ -725,6 +725,22 @@ Your Zcash has been sent! Check your wallet in a few minutes.
         await this.showHowToClaim(chatId);
         break;
 
+      case 'currency_base':
+        await this.showCurrencyDeposit(chatId, 'base');
+        break;
+
+      case 'currency_bnb':
+        await this.showCurrencyDeposit(chatId, 'bnb');
+        break;
+
+      case 'currency_solana':
+        await this.showCurrencyDeposit(chatId, 'solana');
+        break;
+
+      case 'currency_bitcoin':
+        await this.showCurrencyDeposit(chatId, 'bitcoin');
+        break;
+
       default:
         console.log('Unknown callback data:', data);
     }
@@ -814,49 +830,208 @@ That's it! Super simple. 🎉
   }
 
   async showHowToGet(chatId) {
-    const baseAddress = config.base.walletAddress || 'Not configured';
-    const bnbAddress = config.bnb.walletAddress || 'Not configured';
-    const solAddress = config.solana.walletAddress || 'Not configured';
-
     const message = `
 💰 *How to Get ZEC*
 
-Send crypto to these addresses and receive ZEC instantly!
+Select a cryptocurrency to see deposit instructions:
 
-🔷 *Base Network:*
-\`${baseAddress}\`
-
-🟡 *BNB Smart Chain:*
-\`${bnbAddress}\`
-
-🟣 *Solana:*
-\`${solAddress}\`
-
-*Exchange Rate:*
-💎 0.01 ZEC per transaction
-(Custom amounts coming soon!)
+*Supported Currencies:*
+🔷 Base Network (ETH)
+🟡 BNB Smart Chain (BNB)
+🟣 Solana (SOL)
+🟠 Bitcoin (BTC)
 
 *How it works:*
-1️⃣ Register your sender wallet with /register
-2️⃣ Set your ZEC receiving address with /setaddress
-3️⃣ Send crypto from your registered wallet to the address above
-4️⃣ Receive your magic link instantly!
+1️⃣ Select your currency below
+2️⃣ Send crypto to the provided address
+3️⃣ Receive your ZEC magic link instantly!
+4️⃣ Claim your Zcash via Telegram
 
-Need help? Click the help button below.
+*Service Fee:* 1% (shown before you claim)
+*Processing Time:* 4-5 minutes after claiming
     `;
 
     const keyboard = {
       inline_keyboard: [
         [
-          { text: '📝 Register Wallet', callback_data: 'menu_getstarted' },
-          { text: '⚙️ Set ZEC Address', callback_data: 'menu_settings' }
+          { text: '🔷 Base (ETH)', callback_data: 'currency_base' },
+          { text: '🟡 BNB Chain', callback_data: 'currency_bnb' }
         ],
         [
-          { text: '💼 My Wallets', callback_data: 'menu_mywallets' },
-          { text: '📊 My Stats', callback_data: 'menu_mystats' }
+          { text: '🟣 Solana (SOL)', callback_data: 'currency_solana' },
+          { text: '🟠 Bitcoin (BTC)', callback_data: 'currency_bitcoin' }
+        ],
+        [
+          { text: '📝 Register Wallet', callback_data: 'menu_getstarted' },
+          { text: '⚙️ Set ZEC Address', callback_data: 'menu_setaddress' }
         ],
         [
           { text: '❓ Help', callback_data: 'menu_help' },
+          { text: '🏠 Main Menu', callback_data: 'menu_main' }
+        ]
+      ]
+    };
+
+    await this.bot.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+
+  async showCurrencyDeposit(chatId, currency) {
+    let message = '';
+    let address = '';
+    let currencyName = '';
+    let currencySymbol = '';
+    let chainName = '';
+
+    switch(currency) {
+      case 'base':
+        currencyName = 'Base Network';
+        currencySymbol = 'ETH';
+        chainName = 'Base';
+        address = config.base.walletAddress || 'Not configured';
+        message = `
+🔷 *${currencyName} (${currencySymbol})*
+
+*Deposit Address:*
+\`${address}\`
+
+*Instructions:*
+1️⃣ Copy the address above
+2️⃣ Send ${currencySymbol} from your Base wallet
+3️⃣ Wait for transaction confirmation
+4️⃣ Receive your ZEC magic link instantly!
+
+*Important:*
+• Only send ${currencySymbol} (not tokens)
+• Send from a registered wallet (use /register)
+• Minimum: Any amount accepted
+• Fee: 1% service fee (shown before claim)
+
+*Network Details:*
+• Network: Base Mainnet
+• Chain ID: 8453
+• RPC: ${config.base.rpcUrl || 'Default'}
+        `;
+        break;
+
+      case 'bnb':
+        currencyName = 'BNB Smart Chain';
+        currencySymbol = 'BNB';
+        chainName = 'BNB Smart Chain';
+        address = config.bnb.walletAddress || 'Not configured';
+        message = `
+🟡 *${currencyName} (${currencySymbol})*
+
+*Deposit Address:*
+\`${address}\`
+
+*Instructions:*
+1️⃣ Copy the address above
+2️⃣ Send ${currencySymbol} from your BNB wallet
+3️⃣ Wait for transaction confirmation
+4️⃣ Receive your ZEC magic link instantly!
+
+*Important:*
+• Only send ${currencySymbol} (not tokens)
+• Send from a registered wallet (use /register)
+• Minimum: Any amount accepted
+• Fee: 1% service fee (shown before claim)
+
+*Network Details:*
+• Network: BNB Smart Chain Mainnet
+• Chain ID: 56
+• RPC: ${config.bnb.rpcUrl || 'Default'}
+        `;
+        break;
+
+      case 'solana':
+        currencyName = 'Solana';
+        currencySymbol = 'SOL';
+        chainName = 'Solana';
+        address = config.solana.walletAddress || 'Not configured';
+        message = `
+🟣 *${currencyName} (${currencySymbol})*
+
+*Deposit Address:*
+\`${address}\`
+
+*Instructions:*
+1️⃣ Copy the address above
+2️⃣ Send ${currencySymbol} from your Solana wallet
+3️⃣ Wait for transaction confirmation
+4️⃣ Receive your ZEC magic link instantly!
+
+*Important:*
+• Only send ${currencySymbol} (not tokens)
+• Send from a registered wallet (use /register)
+• Minimum: Any amount accepted
+• Fee: 1% service fee (shown before claim)
+
+*Network Details:*
+• Network: Solana Mainnet
+• RPC: ${config.solana.rpcUrl || 'Default'}
+        `;
+        break;
+
+      case 'bitcoin':
+        currencyName = 'Bitcoin';
+        currencySymbol = 'BTC';
+        chainName = 'Bitcoin';
+        const taprootAddress = config.bitcoin.taprootAddress || 'Not configured';
+        const nativeSegwitAddress = config.bitcoin.nativeSegwitAddress || 'Not configured';
+        message = `
+🟠 *${currencyName} (${currencySymbol})*
+
+*Deposit Addresses:*
+
+*Taproot (Recommended):*
+\`${taprootAddress}\`
+
+*Native Segwit:*
+\`${nativeSegwitAddress}\`
+
+*Instructions:*
+1️⃣ Copy either address above (Taproot recommended)
+2️⃣ Send ${currencySymbol} from your Bitcoin wallet
+3️⃣ Wait for transaction confirmation (1-3 blocks)
+4️⃣ Receive your ZEC magic link instantly!
+
+*Important:*
+• You can use either address type
+• Send from a registered wallet (use /register)
+• Minimum: Any amount accepted
+• Fee: 1% service fee (shown before claim)
+• Network fees apply (paid by you)
+
+*Network Details:*
+• Network: Bitcoin Mainnet
+• Confirmations: 1-3 blocks recommended
+        `;
+        break;
+
+      default:
+        await this.showHowToGet(chatId);
+        return;
+    }
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '🔷 Base', callback_data: 'currency_base' },
+          { text: '🟡 BNB', callback_data: 'currency_bnb' }
+        ],
+        [
+          { text: '🟣 Solana', callback_data: 'currency_solana' },
+          { text: '🟠 Bitcoin', callback_data: 'currency_bitcoin' }
+        ],
+        [
+          { text: '📝 Register Wallet', callback_data: 'menu_getstarted' },
+          { text: '⚙️ Set ZEC Address', callback_data: 'menu_setaddress' }
+        ],
+        [
+          { text: '🔙 Back to Currencies', callback_data: 'menu_howtoget' },
           { text: '🏠 Main Menu', callback_data: 'menu_main' }
         ]
       ]

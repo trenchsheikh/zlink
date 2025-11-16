@@ -9,6 +9,7 @@ class PriceService {
       'ETH': 3500,    // Base uses ETH
       'BNB': 600,     // BNB Chain
       'SOL': 150,     // Solana
+      'BTC': 65000,   // Bitcoin
       'ZEC': 45,      // Zcash
     };
     
@@ -20,6 +21,7 @@ class PriceService {
       'ETH': 'ethereum',
       'BNB': 'binancecoin',
       'SOL': 'solana',
+      'BTC': 'bitcoin',
       'ZEC': 'zcash',
     };
     
@@ -53,6 +55,7 @@ class PriceService {
         'ETH': data.ethereum?.usd || this.prices.ETH,
         'BNB': data.binancecoin?.usd || this.prices.BNB,
         'SOL': data.solana?.usd || this.prices.SOL,
+        'BTC': data.bitcoin?.usd || this.prices.BTC,
         'ZEC': data.zcash?.usd || this.prices.ZEC,
       };
       
@@ -62,6 +65,7 @@ class PriceService {
       console.log(`   ETH: $${this.prices.ETH.toFixed(2)}`);
       console.log(`   BNB: $${this.prices.BNB.toFixed(2)}`);
       console.log(`   SOL: $${this.prices.SOL.toFixed(2)}`);
+      console.log(`   BTC: $${this.prices.BTC.toFixed(2)}`);
       console.log(`   ZEC: $${this.prices.ZEC.toFixed(2)}`);
     } catch (error) {
       console.error('⚠️  Failed to fetch prices from CoinGecko:', error.message);
@@ -122,6 +126,8 @@ class PriceService {
       'BNB': 'BNB',
       'BNB Smart Chain': 'BNB',
       'Solana': 'SOL',
+      'Bitcoin': 'BTC',
+      'BTC': 'BTC',
     };
     return chainMap[chain] || 'ETH';
   }
