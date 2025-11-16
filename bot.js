@@ -49,18 +49,26 @@ class ZlinkBot {
       const welcomeMessage = `
 🎉 *Welcome to Zlink!*
 
-The easiest way to get Zcash! Send crypto from Base, BNB Chain, or Solana and receive ZEC instantly via magic link.
+The easiest way to get Zcash! Send crypto and receive ZEC instantly via magic link.
 
-*Supported Networks:*
-🔷 Base Network
-🟡 BNB Smart Chain
-🟣 Solana
+*Supported Currencies:*
+🔷 Base Network (ETH)
+🟡 BNB Smart Chain (BNB)
+🟣 Solana (SOL)
+🟠 Bitcoin (BTC)
 
 *How it works:*
-1. Register your sender wallet address (Base/BNB/Solana)
-2. Set your ZEC receiver address
-3. Send crypto to our address
-4. Receive your ZEC magic link instantly!
+1️⃣ Select your currency and get deposit address
+2️⃣ Register your sender wallet address
+3️⃣ Set your ZEC receiving address
+4️⃣ Send crypto to our address
+5️⃣ Receive your ZEC magic link instantly!
+
+*Features:*
+✨ Real-time conversion rates
+💸 1% service fee (shown before claim)
+⏱️ 4-5 minute processing time
+🎁 Shareable magic links
 
 Ready to get started? 👇
       `;
@@ -253,7 +261,7 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       if (!walletAddress) {
         await this.bot.sendMessage(
           chatId,
-          '❌ Please provide your wallet address.\n\n*Usage:*\n`/register 0xYourAddress` (for Base/BNB)\n`/register YourSolanaAddress` (for Solana)\n\nThis helps us identify you when you send crypto to receive ZEC.',
+          '❌ Please provide your wallet address.\n\n*Usage:*\n`/register 0xYourAddress` (for Base/BNB)\n`/register YourSolanaAddress` (for Solana)\n`/register bc1...` (for Bitcoin)\n\nThis helps us identify you when you send crypto to receive ZEC.',
           { parse_mode: 'Markdown' }
         );
         return;
@@ -262,11 +270,12 @@ Your Zcash has been sent! Check your wallet in a few minutes.
       // Basic validation
       const isEVM = /^0x[a-fA-F0-9]{40}$/.test(walletAddress);
       const isSolana = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress);
+      const isBitcoin = /^(bc1|1|3)[a-zA-Z0-9]{25,62}$/.test(walletAddress);
 
-      if (!isEVM && !isSolana) {
+      if (!isEVM && !isSolana && !isBitcoin) {
         await this.bot.sendMessage(
           chatId,
-          '❌ Invalid wallet address format.\n\nSupported formats:\n• Base/BNB: 0x... (42 characters)\n• Solana: base58 address (32-44 characters)',
+          '❌ Invalid wallet address format.\n\nSupported formats:\n• Base/BNB: 0x... (42 characters)\n• Solana: base58 address (32-44 characters)\n• Bitcoin: bc1..., 1..., or 3... (25-62 characters)',
           { parse_mode: 'Markdown' }
         );
         return;
@@ -276,7 +285,10 @@ Your Zcash has been sent! Check your wallet in a few minutes.
         // Save wallet mapping
         await db.saveUserWallet(userId, username, walletAddress);
 
-        const chain = isEVM ? 'Base/BNB' : 'Solana';
+        let chain = 'Unknown';
+        if (isEVM) chain = 'Base/BNB';
+        else if (isSolana) chain = 'Solana';
+        else if (isBitcoin) chain = 'Bitcoin';
       const keyboard = {
         inline_keyboard: [
           [
@@ -791,19 +803,29 @@ Choose an option below:
 
 Follow these simple steps:
 
-*Step 1:* Register your sender wallet
-\`/register 0xYourWalletAddress\`
-or
-\`/register YourSolanaAddress\`
+*Step 1: Select Your Currency*
+Click "💰 Get ZEC" to choose from:
+🔷 Base Network (ETH)
+🟡 BNB Smart Chain (BNB)
+🟣 Solana (SOL)
+🟠 Bitcoin (BTC)
 
-*Step 2:* Set your ZEC receiving address
-\`/setaddress t1YourZcashAddress\`
+*Step 2: Register Your Wallet*
+Use \`/register <your_wallet_address>\` to register your sender wallet.
 
-*Step 3:* Send crypto to our address
-Click "💰 Get ZEC" to see where to send
+*Step 3: Set Your ZEC Address*
+Use \`/setaddress <your_zcash_address>\` to set where you want to receive ZEC.
 
-*Step 4:* Receive your ZEC magic link!
-We'll send it instantly to you here
+*Step 4: Send Crypto*
+Send crypto to the address shown for your selected currency.
+
+*Step 5: Claim Your ZEC*
+Receive a magic link and claim your ZEC via Telegram!
+
+*Features:*
+✨ Real-time conversion rates
+💸 1% service fee (shown before claim)
+⏱️ 4-5 minute processing time
 
 That's it! Super simple. 🎉
     `;
